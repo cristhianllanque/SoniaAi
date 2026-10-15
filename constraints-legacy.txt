@@ -1,0 +1,5 @@
+# Compatibility for the existing environment's optional Google SDKs.
+# These constraints do not install those SDKs in a fresh environment.
+google-api-core==2.24.2
+grpcio-status==1.62.3
+protobuf==4.25.9

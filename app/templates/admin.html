@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Admin - IA Polleras</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --primary: #f43f5e;
+            --accent: #10b981;
+            --text-light: #f8fafc;
+            --sidebar-width: 280px;
+        }
+
+        body { 
+            font-family: 'Outfit', sans-serif; 
+            background-color: var(--bg-dark); 
+            margin: 0; 
+            padding: 0; 
+            color: var(--text-light);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--panel-bg);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 1rem;
+        }
+
+        .brand {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--primary);
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .nav-items {
+            flex: 1;
+        }
+
+        .nav-item {
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+            color: #94a3b8;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: rgba(244, 63, 94, 0.1);
+            color: var(--primary);
+        }
+
+        .logout-btn { 
+            background-color: transparent; 
+            border: 1px solid #ef4444; 
+            color: #ef4444; 
+            padding: 0.75rem; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            transition: all 0.3s; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+        .logout-btn:hover { background-color: #ef4444; color: white; }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+            background: radial-gradient(circle at top right, #1e293b 0%, #0f172a 100%);
+        }
+
+        h2 { font-size: 32px; margin-bottom: 2rem; font-weight: 600; }
+
+        .dashboard-section { display: none; }
+        .dashboard-section.active { display: block; animation: fadeIn 0.4s; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Glassmorphism Forms */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .form-group.full-width { grid-column: span 2; }
+
+        label { display: block; margin-bottom: 0.5rem; color: #cbd5e1; font-weight: 400; font-size: 14px; }
+        input[type="text"], input[type="number"], textarea, input[type="file"] { 
+            width: 100%; 
+            padding: 0.75rem; 
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1); 
+            border-radius: 8px; 
+            box-sizing: border-box; 
+            color: white;
+            font-family: 'Outfit', sans-serif;
+        }
+        input:focus, textarea:focus { border-color: var(--primary); outline: none; }
+        
+        .checkbox-group { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+        .checkbox-group input { width: 20px; height: 20px; accent-color: var(--primary); }
+
+        .btn-submit { 
+            background: linear-gradient(135deg, var(--primary), #e11d48);
+            color: white; 
+            border: none; 
+            padding: 1rem 2rem; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 1rem; 
+            font-weight: 600;
+            margin-top: 1rem;
+            transition: transform 0.2s;
+        }
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(244, 63, 94, 0.4); }
+        .card-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+        .card-actions .btn-sm { padding: 0.6rem 0.8rem; font-size: 0.875rem; flex: 1 1 45%; margin-top: 0; text-align: center; }
+        .card-actions .btn-rental-rent, .card-actions .btn-rental-return { flex: 1 1 100%; width: 100%; margin-top: 4px; padding: 0.65rem 1rem; }
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #b91c1c);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        .btn-danger:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4); }
+
+        .message { padding: 1rem; margin-bottom: 1rem; border-radius: 8px; display: none; }
+        .success { background-color: rgba(16, 185, 129, 0.1); color: #34d399; border: 1px solid #10b981; }
+        .error { background-color: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid #ef4444; }
+
+        /* Inventory Table */
+        .inventory-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .inventory-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: transform 0.3s;
+        }
+
+        .inventory-card:hover { transform: translateY(-5px); border-color: rgba(255, 255, 255, 0.2); }
+
+        .card-img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #1e293b;
+        }
+
+        .card-body {
+            padding: 1.5rem;
+        }
+
+        .card-tag {
+            background: rgba(244, 63, 94, 0.2);
+            color: var(--primary);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+
+        .card-title { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
+        .card-price { font-size: 20px; font-weight: 800; color: var(--accent); }
+        .card-price.discount { color: #facc15; }
+        .old-price { font-size: 14px; text-decoration: line-through; color: #64748b; margin-left: 10px; }
+        .badge-disponible { background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; display: inline-block; }
+        .badge-alquilada { background: rgba(245, 158, 11, 0.2); color: #fbbf24; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; display: inline-block; }
+        .btn-rental-rent { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: transform 0.2s; }
+        .btn-rental-rent:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4); }
+        .btn-rental-return { background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: transform 0.2s; }
+        .btn-rental-return:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4); }
+        .card-thumbs { display: flex; gap: 6px; padding: 8px 1.5rem 0 1.5rem; }
+        .card-thumb { width: 44px; height: 36px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); transition: border-color 0.2s; }
+        .card-thumb:hover, .card-thumb.active { border-color: var(--primary); }
+        .rental-info { font-size: 12px; color: #fbbf24; margin-top: 6px; margin-bottom: 8px; line-height: 1.4; }
+
+    .nav-item { border: 0; width: 100%; background: transparent; font: inherit; text-align: left; }
+        button:focus-visible { outline: 3px solid #22d3ee; outline-offset: 3px; }
+        [hidden] { display: none !important; }
+        @media(max-width: 768px) { body { height: auto; min-height: 100vh; flex-direction: column; overflow: auto; } .sidebar { width: auto; padding: 1rem; } .main-content { padding: 1rem; } .form-grid { grid-template-columns: 1fr; } .form-group.full-width { grid-column: auto; } }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="brand">IA Polleras Admin</div>
+        <div class="nav-items">
+            <button type="button" class="nav-item active" data-tab="inventory"><i class="fas fa-box"></i> Inventario</button>
+            <button type="button" class="nav-item" data-tab="add"><i class="fas fa-plus-circle"></i> Agregar Pollera</button>
+            <button type="button" class="nav-item" data-tab="monitor"><i class="fas fa-video"></i> Monitor en Vivo</button>
+        </div>
+        <button class="logout-btn" id="logout-btn"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</button>
+    </div>
+
+    <div class="main-content">
+        <!-- Inventory Section -->
+        <div id="inventory-section" class="dashboard-section active">
+            <h2>Inventario de Polleras</h2>
+            <p id="inventory-status" role="status"></p>
+            <div class="inventory-grid" id="inventory-container">
+                <!-- Tarjetas de inventario se llenarán por JS -->
+            </div>
+            <button type="button" class="btn-submit" id="more-btn" hidden>Cargar más productos</button>
+        </div>
+        <!-- Add Section -->
+        <div id="add-section" class="dashboard-section">
+            <h2 id="form-title">Registrar nueva pollera</h2>
+            <div class="glass-panel">
+                <div id="msg" class="message"></div>
+                <form id="pollera-form"><input type="hidden" id="product-id">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="codigo">Código de la Pollera</label>
+                            <input type="text" id="codigo" name="codigo" required maxlength="50" pattern="[A-Za-z0-9_-]+" placeholder="Ej: 34TM">
+                        </div>
+                        <div class="form-group">
+                            <label for="nombre">Nombre / Modelo</label>
+                            <input type="text" id="nombre" name="nombre" required maxlength="100" placeholder="Ej: Pollera Palo Rosa">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="descripcion">Descripción</label>
+                            <textarea id="descripcion" name="descripcion" rows="3" required maxlength="500" placeholder="Detalles de la pollera..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="talla">Talla</label>
+                            <input type="text" id="talla" name="talla" required maxlength="10" placeholder="Ej: XL">
+                        </div>
+                        <div class="form-group full-width" style="border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.25rem; background: rgba(0,0,0,0.2);">
+                            <label style="font-weight: 600; font-size: 15px; margin-bottom: 0.25rem; color: #fff;">Fotografías del producto (hasta 3 fotos)</label>
+                            <p style="font-size: 13px; color: #94a3b8; margin-top: 0; margin-bottom: 1rem;">La Foto 1 será la principal. Cada imagen debe ser JPG, PNG o WebP de hasta 5 MB.</p>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                                <div class="photo-slot">
+                                    <label for="imagen" style="font-size: 13px;">Foto 1 (Principal)</label>
+                                    <div id="preview-1-box" style="margin-bottom: 8px; display: none;">
+                                        <img id="preview-1" alt="Foto 1" src="" style="width: 100%; height: 110px; object-fit: cover; border-radius: 8px;">
+                                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 4px; cursor: pointer; color: #f87171;">
+                                            <input type="checkbox" id="eliminar_imagen_1" name="eliminar_imagen_1" value="true"> Eliminar esta foto
+                                        </label>
+                                    </div>
+                                    <input type="file" id="imagen" name="imagen" accept="image/jpeg,image/png,image/webp">
+                                </div>
+                                <div class="photo-slot">
+                                    <label for="imagen_2" style="font-size: 13px;">Foto 2 (Adicional)</label>
+                                    <div id="preview-2-box" style="margin-bottom: 8px; display: none;">
+                                        <img id="preview-2" alt="Foto 2" src="" style="width: 100%; height: 110px; object-fit: cover; border-radius: 8px;">
+                                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 4px; cursor: pointer; color: #f87171;">
+                                            <input type="checkbox" id="eliminar_imagen_2" name="eliminar_imagen_2" value="true"> Eliminar esta foto
+                                        </label>
+                                    </div>
+                                    <input type="file" id="imagen_2" name="imagen_2" accept="image/jpeg,image/png,image/webp">
+                                </div>
+                                <div class="photo-slot">
+                                    <label for="imagen_3" style="font-size: 13px;">Foto 3 (Adicional)</label>
+                                    <div id="preview-3-box" style="margin-bottom: 8px; display: none;">
+                                        <img id="preview-3" alt="Foto 3" src="" style="width: 100%; height: 110px; object-fit: cover; border-radius: 8px;">
+                                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 4px; cursor: pointer; color: #f87171;">
+                                            <input type="checkbox" id="eliminar_imagen_3" name="eliminar_imagen_3" value="true"> Eliminar esta foto
+                                        </label>
+                                    </div>
+                                    <input type="file" id="imagen_3" name="imagen_3" accept="image/jpeg,image/png,image/webp">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="precio_base">Precio Regular (S/)</label>
+                            <input type="number" id="precio_base" name="precio_base" step="0.01" min="0.01" max="9999999999.99" required placeholder="0.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="rebaja">Precio de Rebaja (S/) Opcional</label>
+                            <input type="number" id="rebaja" name="rebaja" step="0.01" min="0" max="9999999999.99" value="0.0">
+                        </div>
+                        <div class="form-group full-width">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="incluye_sombrero" name="incluye_sombrero" value="true">
+                                <label for="incluye_sombrero">El conjunto incluye Sombrero</label>
+                            </div>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="incluye_manta" name="incluye_manta" value="true">
+                                <label for="incluye_manta">El conjunto incluye Manta</label>
+                            </div>
+                        </div>
+                    </div>
+                    <p style="font-size: 13px; color: #94a3b8;">Al editar, deja los campos de foto vacíos si deseas conservar las fotos actuales.</p>
+                    <button type="submit" class="btn-submit" id="save-btn">Registrar producto</button>
+                    <button type="button" class="btn-submit" id="cancel-edit" hidden>Cancelar edición</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Monitor Section -->
+        <div id="monitor-section" class="dashboard-section">
+            <h2>Monitor de cámara</h2><p id="camera-status" role="status"></p><button id="start-camera" class="btn-submit" type="button">Activar detección</button> <button id="stop-camera" class="btn-submit" type="button">Detener detección</button>
+            <p style="color: #94a3b8; margin-bottom: 20px;">Revisa en tiempo real lo que está viendo la Inteligencia Artificial del puesto.</p>
+            <div class="glass-panel" style="display: flex; justify-content: center; align-items: center; min-height: 400px; background: #000; border-radius: 20px; overflow: hidden; padding: 0;">
+                <img id="admin-webcam" alt="Monitor de cámara restringido al administrador" style="width: 100%; height: 100%; object-fit: cover;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para registrar alquiler -->
+    <div id="modal-backdrop" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 999;"></div>
+    <div id="rental-modal" class="glass-panel" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 460px; z-index: 1000; box-shadow: 0 20px 50px rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.15); background: #1e293b;">
+        <h3 style="margin-top: 0; font-size: 20px; color: #fff; font-weight: 600;">Marcar pollera como alquilada</h3>
+        <p id="rental-product-name" style="color: #cbd5e1; font-size: 14px; margin-bottom: 1.5rem;"></p>
+        <form id="rental-form">
+            <input type="hidden" id="rental-product-id">
+            <div style="margin-bottom: 1rem;">
+                <label for="fecha_alquiler">Fecha de alquiler</label>
+                <input type="date" id="fecha_alquiler" name="fecha_alquiler" required style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white;">
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                <label for="fecha_devolucion_estimada">Fecha estimada de devolución (habitual: 5 a 7 días)</label>
+                <input type="date" id="fecha_devolucion_estimada" name="fecha_devolucion_estimada" required style="width: 100%; padding: 0.75rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white;">
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="button" class="btn-submit btn-sm" id="cancel-rental" style="background: rgba(255,255,255,0.1); color: white;">Cancelar</button>
+                <button type="submit" class="btn-submit btn-sm btn-rental-rent" id="confirm-rental">Confirmar alquiler</button>
+            </div>
+        </form>
+    </div>
+
+    <script src="/static/js/api.js?v=8"></script>
+    <script src="/static/js/admin.js?v=8"></script>
+</body>
+</html>

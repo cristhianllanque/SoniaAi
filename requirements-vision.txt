@@ -1,0 +1,6 @@
+-r requirements.txt
+-c constraints-legacy.txt
+# Optional: presence and hand gestures.
+ultralytics==8.4.141
+mediapipe==0.10.14
+protobuf==4.25.9

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IAPolleras Asistente</title>
+    <link rel="stylesheet" href="/static/css/styles.css?v=9">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="main-container" id="mainContainer">
+        
+        <div class="robot-wrapper" id="robotWrapper">
+            <div class="hero-face" id="heroFace">
+                <div class="eye"><div class="pupil"></div></div>
+                <div class="eye"><div class="pupil"></div></div>
+                <div class="mouth"></div>
+            </div>
+            
+            <div class="robot-body" id="robotBody">
+                <div class="robot-arm arm-left"></div>
+                <div class="robot-arm arm-right">
+                    <div class="robot-hand">
+                        <!-- Teaser visual en la mano -->
+                        <div id="teaserContainer" class="teaser-container">
+                            <div class="teaser-badge">Conoce esta pollera</div>
+                            <img id="teaserImage" src="" alt="Teaser">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Barra de Búsqueda Superior -->
+        <div class="top-search-bar" id="heroView">
+            <div class="search-box">
+                <input type="text" id="codigoInput" placeholder="Código o consulta sobre una pollera…" autocomplete="off" maxlength="1000" aria-label="Código o consulta">
+                <button id="searchBtn" aria-label="Buscar"><i class="fas fa-search"></i></button>
+                <button id="micBtn" aria-label="Mantén presionado para hablar"><i class="fas fa-microphone"></i></button>
+            </div>
+            <div class="interaction-hint" id="interactionHint">Mantén presionado el micrófono para hablar...</div>
+            <div class="detection-controls">
+                <button id="detectionBtn" type="button" aria-pressed="false">Activar detección</button>
+                <span id="detectionStatus" role="status">Detección desactivada</span>
+            </div>
+            <div id="errorPanel" class="error-msg hidden" role="alert">
+                <i class="fas fa-exclamation-circle"></i> No se encontró
+            </div>
+        </div>
+
+        <audio id="robotAudio" class="hidden"></audio>
+
+        <!-- Vista Resultado: Producto Detallado -->
+        <div class="product-view hidden" id="productView">
+            <button class="back-btn" id="backBtn"><i class="fas fa-arrow-left"></i> Volver a buscar</button>
+            
+            <div class="product-card">
+                <div class="product-image-container" id="productImageContainer">
+                    <button type="button" class="gallery-arrow gallery-prev hidden" id="galleryPrev" aria-label="Foto anterior"><i class="fas fa-chevron-left"></i></button>
+                    <img id="resImagen" src="" alt="Pollera" class="product-image">
+                    <button type="button" class="gallery-arrow gallery-next hidden" id="galleryNext" aria-label="Foto siguiente"><i class="fas fa-chevron-right"></i></button>
+                    <div class="badge-discount hidden" id="resDiscountBadge">-20% OFF</div>
+                    <div class="gallery-dots hidden" id="galleryDots"></div>
+                </div>
+                <div class="product-details">
+                    <div class="product-header">
+                        <span class="product-code" id="resCodigo"></span>
+                        <div class="header-badges">
+                            <span class="badge" id="resTalla"></span>
+                            <span class="badge badge-disponible" id="resEstado">DISPONIBLE</span>
+                        </div>
+                    </div>
+                    <h2 id="resNombre"></h2>
+                    <p id="resDesc" class="description"></p>
+                    
+                    <div class="price-container">
+                        <div class="current-price">
+                            <span class="currency">S/</span>
+                            <span class="amount" id="resPrecioFinal"></span>
+                        </div>
+                        <div class="old-price hidden" id="resPrecioOriginalBox">
+                            S/ <span id="resPrecioOriginal"></span>
+                        </div>
+                    </div>
+
+                    <div class="extras">
+                        <div class="extra-item" id="resSombrero">
+                            <span class="icon">👒</span> Sombrero
+                        </div>
+                        <div class="extra-item" id="resManta">
+                            <span class="icon">🧣</span> Manta
+                        </div>
+                    </div>
+                    
+                    <div class="action-section">
+                        <button class="btn-primary" id="whatsappBtn" disabled><i class="fab fa-whatsapp"></i> Consultar por WhatsApp</button>
+                        <div class="qr-code-container">
+                            <p>Consulta disponibilidad</p>
+                            <img id="resQRCode" src="" alt="QR Code">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel de Conversación Interactivo con el Robot -->
+            <div class="product-conversation-box" id="productConversation">
+                <!-- Globo de diálogo interactivo del robot -->
+                <div class="conversation-bubble" id="conversationBubble">
+                    <div class="bubble-header">
+                        <div class="face-container mini-face" id="miniFace" aria-label="Rostro interactivo del robot">
+                            <div class="eye left-eye"><div class="pupil"></div></div>
+                            <div class="eye right-eye"><div class="pupil"></div></div>
+                            <div class="mouth mini-mouth"></div>
+                        </div>
+                        <div class="bubble-meta">
+                            <div class="bubble-title-row">
+                                <span class="bubble-title" id="bubbleSpeaker">Robot Asistente</span>
+                                <div class="speech-status-orb" id="speechStatusOrb">
+                                    <span class="orb-dot"></span>
+                                    <span class="orb-text" id="orbText">En espera</span>
+                                </div>
+                            </div>
+                            <span class="bubble-status" id="bubbleStatus">Habla ahora o haz una consulta...</span>
+                        </div>
+                    </div>
+                    <div class="bubble-content" id="bubbleText">
+                        ¿Tienes alguna consulta sobre esta pollera? Pregúntame sobre precios, tallas, descuentos o colores.
+                    </div>
+                    <div class="user-query-preview hidden" id="userQueryPreview">
+                        <span class="user-tag"><i class="fas fa-user"></i> Tú dijiste:</span>
+                        <span id="userQueryText"></span>
+                    </div>
+                </div>
+
+                <!-- Barra de Interacción: Micrófono y Preguntas -->
+                <div class="conversation-controls">
+                    <button class="product-mic-btn" id="productMicBtn" type="button" aria-label="Presiona para hablar con el robot">
+                        <div class="mic-wave-pulse" id="micWavePulse"></div>
+                        <i class="fas fa-microphone" id="productMicIcon"></i>
+                        <span id="productMicLabel">Presiona para hablar</span>
+                    </button>
+                    
+                    <div class="quick-chips hidden" id="quickChips">
+                        <button type="button" class="chip-btn" data-query="¿Tienen esta pollera en otro color?">🎨 ¿Otro color?</button>
+                        <button type="button" class="chip-btn" data-query="¿Hacen algún descuento o rebaja?">🏷️ ¿Descuento?</button>
+                        <button type="button" class="chip-btn" data-query="¿Qué accesorios incluye esta pollera?">👒 ¿Qué incluye?</button>
+                        <button type="button" class="chip-btn" data-query="¿Tienen en otra talla?">📏 ¿Otra talla?</button>
+                        <button type="button" class="chip-btn" data-query="¿Cuántas salidas o usos ya tiene?">👗 ¿Cuántas salidas?</button>
+                        <button type="button" class="chip-btn chip-bye" data-query="Muchas gracias, eso es todo, chau">👋 Gracias, chau</button>
+                    </div>
+
+                    <div class="inline-query-box hidden" id="inlineQueryBox">
+                        <input type="text" id="productInput" placeholder="O escribe tu consulta aquí…" maxlength="500">
+                        <button type="button" id="productSendBtn" aria-label="Enviar pregunta"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+
+                    <div class="interaction-toggle-bar">
+                        <button type="button" class="fallback-toggle-btn" id="toggleInputBtn" title="Escribir consulta manualmente" aria-label="Escribir consulta"><i class="fas fa-keyboard"></i> Teclado / opciones</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <aside id="assistantResponse" class="assistant-response" hidden><p id="assistantText"></p><button id="stopAudioBtn" type="button" aria-label="Detener voz y ocultar respuesta">Cerrar</button></aside>
+    <script src="/static/js/api.js?v=9"></script>
+    <script src="/static/js/main.js?v=9"></script>
+</body>
+</html>

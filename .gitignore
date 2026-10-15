@@ -1,0 +1,17 @@
+.env
+data/
+*.db
+*.db-*
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+app/static/audio/
+*.log
+artifacts/
+temp_test/
+test.mp3
+
