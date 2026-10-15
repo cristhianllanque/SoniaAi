@@ -126,20 +126,41 @@ def empty_catalog():
     return Speech().add('empatica', 'Casera, aún no hay polleras registradas en el catálogo.')
 
 
-def autonomous_greeting(product=None):
+def autonomous_greeting():
+    """Warm autonomous greeting when camera detects interest.
+    Strictly keeps focus on the robot face and invites customer interaction without pushing a specific product.
+    """
     speech = Speech()
-    if product:
-        price = money(product.precio_final)
-        speech.add('entusiasmada', random.choice([
-            '¡Hola, caserita! ¿Buscas alguna pollera para tu fiesta?',
-            '¡Hola, casera! Qué gusto verte.',
-            '¡Hola, caserita! Bienvenida a nuestra tienda.',
-        ]))
-        speech.add('alegre', f'Mira este modelo {product.nombre}, a {price} soles por alquiler.')
-        speech.add('curiosa', 'Dime qué color o código estás buscando, ¡te escucho!')
-    else:
-        speech.add('entusiasmada', '¡Hola, caserita! ¿Buscas alguna pollera para tu fiesta?')
-        speech.add('curiosa', 'Dime qué color o código estás buscando, ¡te escucho!')
+    speech.add('entusiasmada', random.choice([
+        '¡Hola, caserita! Tenemos unas polleras muy bonitas para tus fiestas.',
+        '¡Hola, casera! Qué gusto verte, tenemos hermosas polleras.',
+        '¡Hola, caserita! Bienvenida a nuestra tienda.',
+    ]))
+    speech.add('curiosa', random.choice([
+        '¿Buscas algún color o código en especial? Te escucho.',
+        '¿Qué modelo o color de pollera estás buscando hoy? Dime nomás.',
+        'Dime qué color o código necesitas y te lo muestro con gusto.',
+    ]))
+    return speech
+
+
+def greeting():
+    """Warm verbal reply to a customer greeting without navigating away from the face."""
+    speech = Speech()
+    speech.add('entusiasmada', random.choice([
+        '¡Hola, caserita! Qué gusto tenerte por aquí.',
+        '¡Hola, casera! Bienvenida a la tienda.',
+        '¡Hola, caserita! ¿Cómo estás?',
+    ]))
+    speech.add('curiosa', '¿Buscas alguna pollera para tu fiesta? Dime el color o código que estás buscando, te escucho.')
+    return speech
+
+
+def general_inquiry(products=None):
+    """Verbal overview for general questions like '¿qué polleras tienes?' without picking an arbitrary product card."""
+    speech = Speech()
+    speech.add('alegre', 'Tenemos hermosas polleras de fiesta para alquiler en colores como rojo, morado, azul, verde y fucsia.')
+    speech.add('curiosa', '¿Tienes en mente algún color, talla o código en especial? Dime y te la muestro, caserita.')
     return speech
 
 

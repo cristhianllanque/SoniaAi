@@ -132,7 +132,4 @@ async def select_product(message, products, current_code=None, context=None):
     selected = await query_ollama(prompt)
     if selected and selected.codigo_mostrar:
         return next((p for p in products if p.codigo == selected.codigo_mostrar.upper()), None)
-    # Offline assistance remains usable for simple greetings.
-    if re.fullmatch(r'(hola|buenos dias|buenas tardes|buenas noches|que tienes)[!?. ]*', text):
-        return available_products[0] if available_products else products[0]
     return None

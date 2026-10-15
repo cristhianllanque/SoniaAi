@@ -319,14 +319,16 @@ async function applySpeech(data, ticket) {
     if (data.context) {
         sessionContext = Object.assign(sessionContext, data.context);
     }
-    if (data.pollera) {
+    if (data.pollera && data.action === 'show_pollera') {
         mostrarResultado(data.pollera);
         sessionContext.current_code = data.pollera.codigo;
         if (!sessionContext.viewed_codes.includes(data.pollera.codigo)) {
             sessionContext.viewed_codes.push(data.pollera.codigo);
         }
     }
-    if (data.imagen_url && !currentProduct) {
+    if (data.action === 'greeting') {
+        el('robotWrapper').classList.remove('presenting');
+    } else if (data.imagen_url && !currentProduct && data.action === 'show_pollera') {
         api.setImage(el('teaserImage'), data.imagen_url);
         el('robotWrapper').classList.add('presenting');
     }
@@ -658,7 +660,7 @@ async function enviarPreguntaConversacion(message) {
         if (ticket === sequence && data.text) {
             updateConversationBubble(data.text, query, '🟢 Respondiendo...');
         }
-        if (ticket === sequence && data.pollera) {
+        if (ticket === sequence && data.pollera && data.action === 'show_pollera') {
             mostrarResultado(data.pollera);
         }
         await applySpeech(data, ticket);
@@ -707,7 +709,7 @@ async function pollInterest() {
         const result = await api.request('/api/check_interest', {timeout: 5000});
         detectionEnabled = ['starting', 'running'].includes(result.state);
         updateDetectionLabel(result);
-        if (result.interested && before === sequence && phase === 'idle') {
+        if (result.interested && before === sequence && phase === 'idle' && !currentProduct) {
             const {ticket, signal} = beginRequest();
             try {
                 let data;
@@ -716,6 +718,9 @@ async function pollInterest() {
                 } catch (err) {
                     data = await api.request('/api/audio/ofertas', {signal});
                 }
+                // Autonomous interest detection strictly keeps focus on robot face
+                data.action = 'greeting';
+                delete data.pollera;
                 await applySpeech(data, ticket);
             } catch (error) {
                 requestError(error, ticket);

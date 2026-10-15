@@ -333,3 +333,35 @@ test('session context carries current_code and updates viewed_codes', async () =
     assert.deepEqual(h.run("sessionContext.viewed_codes"), ['ROJA01']);
 });
 
+test('interest detection greets verbally without opening productView and keeps heroView visible', async () => {
+    const h = harness();
+    h.run('detectionEnabled=true; phase="idle";');
+    h.context.api.request = async (url, options) => {
+        h.calls.push({url, options});
+        if (url === '/api/check_interest') return {state: 'running', interested: true};
+        if (url === '/api/audio/saludo') return {text: '¡Hola, caserita! ¿Qué pollera buscas?', action: 'greeting', audio_url: null};
+        return {};
+    };
+    await h.run('pollInterest()');
+    assert.equal(h.run('currentProduct'), null);
+    assert.equal(h.element('heroView').classList.contains('hidden'), false);
+    assert.equal(h.element('productView').classList.contains('hidden'), true);
+    assert.equal(h.element('robotWrapper').classList.contains('hidden'), false);
+    assert.equal(h.element('robotWrapper').classList.contains('presenting'), false);
+});
+
+test('general inquiry or greeting does not open productView, specific query does', async () => {
+    const h = harness();
+    // Greeting response without show_pollera action
+    await h.run("applySpeech({text: '¡Hola, caserita! ¿Qué buscas?', action: 'answer', audio_url: null}, sequence)");
+    assert.equal(h.run('currentProduct'), null);
+    assert.equal(h.element('heroView').classList.contains('hidden'), false);
+    assert.equal(h.element('productView').classList.contains('hidden'), true);
+
+    // Specific product query with show_pollera action
+    await h.run("applySpeech({text: 'Mira esta pollera', action: 'show_pollera', pollera: {codigo: '34TM', nombre: 'Pollera 34TM', talla: 'M', precio_final: 80, precio_base: 100}, audio_url: null}, sequence)");
+    assert.equal(h.run('currentProduct.codigo'), '34TM');
+    assert.equal(h.element('heroView').classList.contains('hidden'), true);
+    assert.equal(h.element('productView').classList.contains('hidden'), false);
+});
+

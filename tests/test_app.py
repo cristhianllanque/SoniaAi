@@ -727,3 +727,27 @@ class AutonomiaV1Tests(ApiTests):
         d4 = r4.json()
         self.assertEqual(d4['action'], 'farewell')
         self.assertIn('estare si necesitas algo', assistant.normalize(d4['text']))
+
+    def test_saludo_does_not_return_product(self):
+        resp = self.client.get('/api/audio/saludo')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['action'], 'greeting')
+        self.assertIsNone(data.get('pollera'))
+        self.assertIsNone(data.get('imagen_url'))
+
+    def test_chat_greeting_and_general_inquiry_do_not_show_product(self):
+        # Greeting should answer warmly without opening a product card
+        r_hola = self.client.post('/api/chat', json={'message': 'hola buenas tardes'})
+        self.assertEqual(r_hola.status_code, 200)
+        d_hola = r_hola.json()
+        self.assertEqual(d_hola['action'], 'answer')
+        self.assertIsNone(d_hola.get('pollera'))
+
+        # General inquiry should give an overview without selecting arbitrary product
+        r_gen = self.client.post('/api/chat', json={'message': '¿qué polleras tienes?'})
+        self.assertEqual(r_gen.status_code, 200)
+        d_gen = r_gen.json()
+        self.assertEqual(d_gen['action'], 'answer')
+        self.assertIsNone(d_gen.get('pollera'))
+        self.assertIn('polleras', d_gen['text'].lower())

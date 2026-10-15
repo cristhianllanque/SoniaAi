@@ -206,15 +206,9 @@ async def generate_ofertas_audio(products=Depends(load_catalog)):
 
 
 @app.get('/api/audio/saludo', dependencies=[Depends(limit_speech)])
-async def generate_saludo_audio(products=Depends(load_catalog)):
-    available = [p for p in products if getattr(p, 'estado', 'DISPONIBLE') == 'DISPONIBLE']
-    product = random.choice(available) if available else None
-    speech = personality.autonomous_greeting(product)
-    extra = {'action': 'greeting'}
-    if product:
-        extra['imagen_url'] = product.imagen_url
-        extra['pollera'] = product
-    return await spoken_response(speech, **extra)
+async def generate_saludo_audio():
+    speech = personality.autonomous_greeting()
+    return await spoken_response(speech, action='greeting')
 
 
 @app.get('/api/audio/recordatorio', dependencies=[Depends(limit_speech)])
@@ -226,7 +220,7 @@ async def generate_recordatorio_audio():
 @app.get('/api/audio/detalles/{codigo}', dependencies=[Depends(limit_speech)])
 async def generate_detalles_audio(product=Depends(load_product)):
     speech = personality.presentation(product)
-    return await spoken_response(speech, pollera=product)
+    return await spoken_response(speech, pollera=product, action='show_pollera')
 
 
 @app.post('/api/chat', dependencies=[Depends(limit_speech)])
@@ -235,7 +229,24 @@ async def chat_with_ai(context=Depends(load_chat_context)):
     sess_ctx = chat_msg.context or schemas.ConversationContext(current_code=chat_msg.codigo_actual)
     if chat_msg.codigo_actual and not sess_ctx.current_code:
         sess_ctx.current_code = chat_msg.codigo_actual
-    
+
+    normalized = assistant.normalize(chat_msg.message)
+    clean_msg = ' '.join(re.sub(r'[^a-z0-9 ]+', ' ', normalized).split())
+
+    # 1. Check for farewell in message
+    if conversation.detect_intent(clean_msg) == 'despedida':
+        return await spoken_response(personality.farewell(), action='farewell', pollera=None, context=sess_ctx.model_dump())
+
+    # 2. Check for simple greeting ("hola", "buenos dias", "buenas") -> Answer warmly without opening productView
+    if conversation.detect_intent(clean_msg) == 'saludo' and not any(k in clean_msg for k in ('codigo', 'pollera', 'color', 'talla', 'precio', 'modelo', 'cuanto')):
+        return await spoken_response(personality.greeting(), action='answer', pollera=None, context=sess_ctx.model_dump())
+
+    # 3. Check for general questions like "¿qué polleras tienes?", "¿qué tienes?", "¿qué hay?"
+    is_general_inquiry = any(clean_msg.startswith(p) or clean_msg == p for p in ('que tienes', 'que polleras tienes', 'que modelos tienes', 'cuales tienes', 'que hay', 'que ofrecen', 'que tipo de polleras tienes')) or (any(w in clean_msg for w in ('que', 'cuales')) and any(w in clean_msg for w in ('tienes', 'hay', 'ofreces', 'muestras')) and not any(c in clean_msg for c in ('roja', 'rojo', 'morada', 'morado', 'azul', 'verde', 'negra', 'blanca', 'amarilla', 'fucsia', 'rosada')))
+    if is_general_inquiry:
+        return await spoken_response(personality.general_inquiry(products), action='answer', pollera=None, context=sess_ctx.model_dump())
+
+    # 4. Search for specific product requested by client
     product = await assistant.select_product(chat_msg.message, products, chat_msg.codigo_actual, context=sess_ctx)
     if product:
         sess_ctx.current_code = product.codigo
@@ -250,11 +261,6 @@ async def chat_with_ai(context=Depends(load_chat_context)):
             return await spoken_response(speech, action='show_pollera', pollera=target, context=sess_ctx.model_dump())
         speech = personality.presentation(product)
         return await spoken_response(speech, action='show_pollera', pollera=product, context=sess_ctx.model_dump())
-
-    # Check for farewell in message
-    normalized = assistant.normalize(chat_msg.message)
-    if conversation.detect_intent(normalized) == 'despedida':
-        return await spoken_response(personality.farewell(), action='farewell', pollera=None, context=sess_ctx.model_dump())
 
     speech = personality.not_found() if products else personality.empty_catalog()
     return await spoken_response(speech, action='none', pollera=None, context=sess_ctx.model_dump())
