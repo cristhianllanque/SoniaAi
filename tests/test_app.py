@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from app import assistant, auth, config, conversation, database, main, models, personality, schemas, tts_engine
 from app.security import limiter
-from app.yolo_engine import YoloEngine
+from app.yolo_engine import YoloEngine, get_engine
 
 PASSWORD = 'test-password-with-entropy'
 HASH = auth.get_password_hash(PASSWORD)
@@ -653,3 +653,77 @@ class MejorasTests(ApiTests):
                 self.assertEqual(row, ('LEGACY', 'DISPONIBLE'))
         finally:
             legacy.dispose()
+
+
+class AutonomiaV1Tests(ApiTests):
+    def test_config_autonomia(self):
+        resp = self.client.get('/api/config')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('autonomy', data)
+        self.assertTrue(data['autonomy']['enabled'])
+        self.assertGreaterEqual(data['autonomy']['post_tts_pause_ms'], 300)
+        self.assertGreaterEqual(data['autonomy']['farewell_cooldown_seconds'], 15)
+
+    def test_vision_cooldown_endpoint(self):
+        self.assertEqual(self.client.post('/api/vision/cooldown?seconds=25').status_code, 401)
+        headers = self.login()
+        resp = self.client.post('/api/vision/cooldown?seconds=25', headers=headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['status'], 'cooldown_set')
+        self.assertGreater(get_engine().lock_until, time.monotonic() + 15)
+
+    def test_audio_saludo_y_recordatorio(self):
+        r_saludo = self.client.get('/api/audio/saludo')
+        self.assertEqual(r_saludo.status_code, 200)
+        d_saludo = r_saludo.json()
+        self.assertEqual(d_saludo['action'], 'greeting')
+        self.assertIn('caser', d_saludo['text'].lower())
+
+        r_rec = self.client.get('/api/audio/recordatorio')
+        self.assertEqual(r_rec.status_code, 200)
+        d_rec = r_rec.json()
+        self.assertEqual(d_rec['action'], 'reminder')
+        self.assertIn('buscando', d_rec['text'].lower())
+
+    def test_multi_turn_session_context(self):
+        # Turn 1: Search for 34TM
+        r1 = self.client.post('/api/chat', json={'message': 'muestrame la 34TM'})
+        self.assertEqual(r1.status_code, 200)
+        d1 = r1.json()
+        self.assertEqual(d1['action'], 'show_pollera')
+        self.assertEqual(d1['pollera']['codigo'], '34TM')
+        ctx = d1['context']
+        self.assertEqual(ctx['current_code'], '34TM')
+        self.assertIn('34TM', ctx['viewed_codes'])
+
+        # Turn 2: Query price without naming the pollera again (memory test)
+        r2 = self.client.post('/api/conversacion', json={
+            'message': '¿cuánto cuesta?',
+            'codigo': '34TM',
+            'context': ctx
+        })
+        self.assertEqual(r2.status_code, 200)
+        d2 = r2.json()
+        self.assertIn('80.00 soles', d2['text'])
+
+        # Turn 3: Query size availability
+        r3 = self.client.post('/api/conversacion', json={
+            'message': '¿tienes en talla L?',
+            'codigo': '34TM',
+            'context': d2['context']
+        })
+        self.assertEqual(r3.status_code, 200)
+        d3 = r3.json()
+        self.assertIn('talla', d3['text'].lower())
+
+        # Turn 4: Farewell
+        r4 = self.client.post('/api/conversacion', json={
+            'message': 'No, muchas gracias chau',
+            'codigo': '34TM',
+            'context': d3['context']
+        })
+        self.assertEqual(r4.status_code, 200)
+        d4 = r4.json()
+        self.assertEqual(d4['action'], 'farewell')
+        self.assertIn('estare si necesitas algo', assistant.normalize(d4['text']))

@@ -1,4 +1,4 @@
-let phase = 'idle';
+let phase = 'idle'; // idle | listening | thinking | speaking
 let sequence = 0;
 let requestController = null;
 let recognition = null;
@@ -13,12 +13,50 @@ let audioTimer = null;
 let currentProduct = null;
 let whatsappNumber = '';
 let currentMood = 'amable';
+
+// Autonomous Conversation V1 State
 let autoListening = false;
 let autoListenTimer = null;
 let speechWaitTimer = null;
 let silenceTimer = null;
+let postTtsSafetyTimer = null;
 let accumulatedTranscript = '';
 let isSpeakingDetected = false;
+let reminderGivenInTurn = false;
+
+let autonomyConfig = {
+    enabled: true,
+    presence_min_seconds: 5.0,
+    face_facing_seconds: 2.0,
+    post_tts_pause_ms: 500,
+    silence_reminder_seconds: 12.0,
+    session_inactivity_seconds: 90.0,
+    farewell_cooldown_seconds: 30.0
+};
+
+let sessionContext = {
+    session_id: null,
+    current_code: null,
+    last_color: null,
+    last_talla: null,
+    viewed_codes: [],
+    last_intent: null,
+    last_robot_question: null
+};
+
+function resetSessionContext() {
+    sessionContext = {
+        session_id: null,
+        current_code: null,
+        last_color: null,
+        last_talla: null,
+        viewed_codes: [],
+        last_intent: null,
+        last_robot_question: null
+    };
+    reminderGivenInTurn = false;
+}
+
 const el = id => document.getElementById(id);
 
 function setMood(mood) {
@@ -99,7 +137,46 @@ function setPhase(value) {
     if (value === 'thinking') setMood('pensativa');
     if (value === 'listening') setMood('curiosa');
     el('searchBtn')?.setAttribute('aria-busy', value === 'thinking' ? 'true' : 'false');
-    el('micBtn')?.classList.toggle('recording', value === 'listening');
+    
+    // Update Hero Mic Button
+    const mic = el('micBtn');
+    if (mic) {
+        mic.classList.toggle('active-listening', value === 'listening');
+        mic.classList.toggle('recording', value === 'listening');
+    }
+
+    // Update Hero Speech Status Orb
+    const heroOrb = el('heroSpeechStatusOrb');
+    const heroOrbText = el('heroOrbText');
+    if (heroOrb) {
+        heroOrb.classList.remove('speaking', 'listening', 'thinking');
+        if (value !== 'idle') heroOrb.classList.add(value);
+    }
+    if (heroOrbText) {
+        if (value === 'listening') heroOrbText.textContent = 'Escuchando';
+        else if (value === 'thinking') heroOrbText.textContent = 'Pensando';
+        else if (value === 'speaking') heroOrbText.textContent = 'Hablando';
+        else heroOrbText.textContent = 'En espera';
+    }
+
+    // Update interaction hint on hero screen
+    const hint = el('interactionHint');
+    if (hint && !currentProduct) {
+        if (value === 'listening') {
+            hint.textContent = '🟡 Te estoy escuchando... ¡Dime qué pollera buscas!';
+            hint.classList.add('live');
+        } else if (value === 'thinking') {
+            hint.textContent = '🟣 Consultando en el catálogo...';
+            hint.classList.remove('live');
+        } else if (value === 'speaking') {
+            hint.textContent = '🟢 Respondiendo...';
+            hint.classList.remove('live');
+        } else {
+            hint.textContent = 'Mantén presionado el micrófono para hablar o acércate...';
+            hint.classList.remove('live');
+        }
+    }
+
     setProductMicState(value);
 }
 
@@ -164,11 +241,15 @@ function playThinkingAudio(ticket) {
 function cancelActive() {
     sequence += 1;
     stopAutoListen();
+    clearTimeout(postTtsSafetyTimer);
+    postTtsSafetyTimer = null;
     thinkingActive = false;
     thinkingWaitPromise = null;
     requestController?.abort();
     requestController = null;
-    if (recognition && phase === 'listening') recognition.abort();
+    if (recognition && (phase === 'listening' || recording)) {
+        try { recognition.abort(); } catch (_) {}
+    }
     stopAudio();
     setPhase('idle');
     unlockDetection();
@@ -185,6 +266,10 @@ function beginRequest() {
 
 async function playAudioFromUrl(url, ticket = sequence, onEnded = null) {
     if (ticket !== sequence) return;
+    // Acoustic protection: Ensure recognition is stopped while audio plays
+    if (recognition && recording) {
+        try { recognition.abort(); } catch (_) {}
+    }
     if (!url) {
         setPhase('idle');
         unlockDetection();
@@ -231,7 +316,16 @@ async function applySpeech(data, ticket) {
     if (ticket !== sequence) return;
     showText(data.text || '');
     if (data.mood) setMood(data.mood);
-    if (data.pollera) mostrarResultado(data.pollera);
+    if (data.context) {
+        sessionContext = Object.assign(sessionContext, data.context);
+    }
+    if (data.pollera) {
+        mostrarResultado(data.pollera);
+        sessionContext.current_code = data.pollera.codigo;
+        if (!sessionContext.viewed_codes.includes(data.pollera.codigo)) {
+            sessionContext.viewed_codes.push(data.pollera.codigo);
+        }
+    }
     if (data.imagen_url && !currentProduct) {
         api.setImage(el('teaserImage'), data.imagen_url);
         el('robotWrapper').classList.add('presenting');
@@ -239,9 +333,20 @@ async function applySpeech(data, ticket) {
     await playAudioFromUrl(data.audio_url, ticket, () => {
         if (ticket !== sequence) return;
         if (data.action === 'farewell') {
+            // Activate cooldown so robot doesn't immediately re-greet someone leaving
+            const cooldownSec = autonomyConfig.farewell_cooldown_seconds || 30;
+            api.request('/api/vision/cooldown?seconds=' + encodeURIComponent(cooldownSec), {method: 'POST'}).catch(() => {});
+            resetSessionContext();
             volverInicio();
-        } else if (currentProduct) {
-            startAutoListen();
+        } else {
+            // Echo shield: Acoustic pause post-TTS before resuming microphone
+            const pauseMs = autonomyConfig.post_tts_pause_ms || 500;
+            clearTimeout(postTtsSafetyTimer);
+            postTtsSafetyTimer = setTimeout(() => {
+                if (ticket === sequence && phase === 'idle' && autonomyConfig.enabled) {
+                    startAutoListen();
+                }
+            }, pauseMs);
         }
     });
 }
@@ -257,13 +362,18 @@ function requestError(error, ticket) {
 
 async function enviarMensajeVoz(message) {
     if (!message.trim()) return;
+    reminderGivenInTurn = false;
     const {ticket, signal} = beginRequest();
     playThinkingAudio(ticket);
     try {
         const data = await api.request('/api/chat', {
             method: 'POST', signal,
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({message, codigo_actual: currentProduct?.codigo || null})
+            body: JSON.stringify({
+                message,
+                codigo_actual: currentProduct?.codigo || sessionContext.current_code || null,
+                context: sessionContext
+            })
         });
         await applySpeech(data, ticket);
     } catch (error) {
@@ -435,11 +545,12 @@ function volverInicio() {
     clearTimeout(inactivityTimer);
     inactivityTimer = null;
     currentProduct = null;
+    resetSessionContext();
     setMood('amable');
     const hint = el('interactionHint');
     if (hint) {
         hint.classList.remove('live');
-        hint.textContent = 'Mantén presionado el micrófono para hablar...';
+        hint.textContent = 'Mantén presionado el micrófono para hablar o acércate...';
     }
     updateConversationBubble(
         '¿Tienes alguna consulta sobre esta pollera? Pregúntame sobre precios, tallas, descuentos o colores.',
@@ -463,46 +574,53 @@ function stopAutoListen() {
     speechWaitTimer = null;
     clearTimeout(silenceTimer);
     silenceTimer = null;
+    clearTimeout(postTtsSafetyTimer);
+    postTtsSafetyTimer = null;
     accumulatedTranscript = '';
     isSpeakingDetected = false;
+    if (recognition && recording && !micPressed) {
+        try { recognition.stop(); } catch (_) {}
+    }
     const hint = el('interactionHint');
     if (hint && !currentProduct) {
         hint.classList.remove('live');
-        hint.textContent = 'Mantén presionado el micrófono para hablar...';
+        hint.textContent = 'Mantén presionado el micrófono para hablar o acércate...';
     }
 }
 
 function startAutoListen() {
-    if (!recognition || !currentProduct || phase === 'speaking' || phase === 'thinking') return;
+    if (!recognition || phase === 'speaking' || phase === 'thinking' || !autonomyConfig.enabled) return;
     stopAutoListen();
     autoListening = true;
     recognitionTicket = sequence;
     accumulatedTranscript = '';
     isSpeakingDetected = false;
 
-    setPhase('listening');
-    setMood('curiosa');
+    // The yellow indicator ONLY turns yellow inside recognition.onstart
+    // once the microphone is verified to be actively running.
 
-    const hint = el('interactionHint');
-    if (hint) {
-        hint.textContent = '🎙️ Te escucho… pregúntame sobre esta pollera';
-        hint.classList.add('live');
-    }
-
-    if (el('bubbleStatus')) {
-        el('bubbleStatus').textContent = '🟡 Puedes hablar, te estoy escuchando...';
-    }
-
-    // Customer has up to 8 seconds of initial silence before returning to idle
-    speechWaitTimer = setTimeout(() => {
-        if (autoListening && currentProduct && !isSpeakingDetected && phase === 'listening') {
-            stopAutoListen();
-            setPhase('idle');
-            if (el('bubbleStatus')) {
-                el('bubbleStatus').textContent = 'Haz una consulta o di "chau"...';
+    const silenceMs = (autonomyConfig.silence_reminder_seconds || 12) * 1000;
+    speechWaitTimer = setTimeout(async () => {
+        if (autoListening && !isSpeakingDetected && phase === 'listening') {
+            if (!reminderGivenInTurn) {
+                reminderGivenInTurn = true;
+                const {ticket, signal} = beginRequest();
+                try {
+                    const data = await api.request('/api/audio/recordatorio', {signal});
+                    await applySpeech(data, ticket);
+                } catch (_) {
+                    stopAutoListen();
+                    setPhase('idle');
+                }
+            } else {
+                stopAutoListen();
+                setPhase('idle');
+                if (currentProduct) {
+                    volverInicio();
+                }
             }
         }
-    }, 8000);
+    }, silenceMs);
 
     try {
         recognition.start();
@@ -510,10 +628,10 @@ function startAutoListen() {
 }
 
 function scheduleNextAutoListen(ms = 1500) {
-    if (!autoListening || !currentProduct || phase === 'speaking' || phase === 'thinking') return;
+    if (!autoListening || phase === 'speaking' || phase === 'thinking' || !autonomyConfig.enabled) return;
     clearTimeout(autoListenTimer);
     autoListenTimer = setTimeout(() => {
-        if (autoListening && currentProduct && phase === 'idle') {
+        if (autoListening && phase === 'idle') {
             startAutoListen();
         }
     }, ms);
@@ -522,6 +640,7 @@ function scheduleNextAutoListen(ms = 1500) {
 async function enviarPreguntaConversacion(message) {
     if (!message || !message.trim() || !currentProduct) return;
     const query = message.trim();
+    reminderGivenInTurn = false;
     stopAutoListen();
     updateConversationBubble('', query, '🟣 Pensando en tu consulta...');
     const {ticket, signal} = beginRequest();
@@ -530,7 +649,11 @@ async function enviarPreguntaConversacion(message) {
         const data = await api.request('/api/conversacion', {
             method: 'POST', signal,
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({message: query, codigo: currentProduct.codigo})
+            body: JSON.stringify({
+                message: query,
+                codigo: currentProduct.codigo,
+                context: sessionContext
+            })
         });
         if (ticket === sequence && data.text) {
             updateConversationBubble(data.text, query, '🟢 Respondiendo...');
@@ -547,7 +670,10 @@ async function enviarPreguntaConversacion(message) {
 
 function resetInactivityTimer() {
     clearTimeout(inactivityTimer);
-    if (currentProduct) inactivityTimer = setTimeout(volverInicio, 120000);
+    const timeoutMs = (autonomyConfig.session_inactivity_seconds || 90) * 1000;
+    if (currentProduct || autoListening) {
+        inactivityTimer = setTimeout(volverInicio, timeoutMs);
+    }
 }
 
 async function toggleDetection() {
@@ -584,7 +710,12 @@ async function pollInterest() {
         if (result.interested && before === sequence && phase === 'idle') {
             const {ticket, signal} = beginRequest();
             try {
-                const data = await api.request('/api/audio/ofertas', {signal});
+                let data;
+                try {
+                    data = await api.request('/api/audio/saludo', {signal});
+                } catch (err) {
+                    data = await api.request('/api/audio/ofertas', {signal});
+                }
                 await applySpeech(data, ticket);
             } catch (error) {
                 requestError(error, ticket);
@@ -642,7 +773,10 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.interimResults = true;
         recognition.onstart = () => {
             recording = true;
-            if (!micPressed && !autoListening) {
+            // The circular yellow indicator turns yellow ONLY when recognition is genuinely started
+            if (autoListening || micPressed) {
+                setPhase('listening');
+            } else {
                 try { recognition.stop(); } catch (_) {}
             }
         };
@@ -658,8 +792,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return;
             }
-            if (autoListening && currentProduct && phase === 'listening') {
-                try { recognition.start(); } catch (_) {}
+            if (autoListening && phase === 'listening') {
+                try { recognition.start(); } catch (_) {
+                    setPhase('idle');
+                }
             } else if (phase === 'listening' && !micPressed) {
                 setPhase('idle');
             }
@@ -667,6 +803,12 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.onerror = event => {
             recording = false;
             if (event.error === 'no-speech') {
+                return;
+            }
+            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                stopAutoListen();
+                setPhase('idle');
+                showError('El micrófono no tiene permisos activados. Usa el botón manual o escribe tu consulta.');
                 return;
             }
             if (event.error !== 'aborted') {
@@ -677,7 +819,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
         recognition.onresult = event => {
-            if (recognitionTicket !== sequence || phase !== 'listening') return;
+            // ACOUSTIC ECHO PROTECTION:
+            // Strictly ignore and discard any audio received while robot is speaking or thinking
+            if (phase !== 'listening' || recognitionTicket !== sequence) return;
 
             let interim = '';
             let final = '';
@@ -718,7 +862,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         stopAutoListen();
                         enviarPreguntaConversacion(query);
                     }
-                }, 1400);
+                }, 1300);
             } else {
                 el('codigoInput').value = currentText;
                 clearTimeout(silenceTimer);
@@ -728,7 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         stopAutoListen();
                         enviarMensajeVoz(query);
                     }
-                }, 1400);
+                }, 1300);
             }
         };
         el('micBtn').addEventListener('pointerdown', event => {
@@ -830,6 +974,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     api.request('/api/config').then(data => {
         whatsappNumber = /^\d{8,15}$/.test(data.whatsapp_number) ? data.whatsapp_number : '';
+        if (data.autonomy) {
+            autonomyConfig = Object.assign(autonomyConfig, data.autonomy);
+        }
         updateContact();
     }).catch(() => showError('No se pudo cargar el contacto de la tienda.'));
     interestTimer = setInterval(pollInterest, 2000);

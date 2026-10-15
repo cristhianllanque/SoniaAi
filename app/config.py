@@ -27,6 +27,15 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_BODY_BYTES = 6 * 1024 * 1024
 AUDIO_RETENTION_SECONDS = 24 * 60 * 60
 
+# Autonomía conversacional inteligente V1
+AUTONOMY_ENABLED = env('AUTONOMY_ENABLED', cast=bool, default=True)
+PRESENCE_MIN_SECONDS = env('PRESENCE_MIN_SECONDS', cast=float, default=5.0)
+FACE_FACING_SECONDS = env('FACE_FACING_SECONDS', cast=float, default=2.0)
+POST_TTS_PAUSE_MS = env('POST_TTS_PAUSE_MS', cast=int, default=500)
+SILENCE_REMINDER_SECONDS = env('SILENCE_REMINDER_SECONDS', cast=float, default=12.0)
+SESSION_INACTIVITY_SECONDS = env('SESSION_INACTIVITY_SECONDS', cast=float, default=90.0)
+FAREWELL_COOLDOWN_SECONDS = env('FAREWELL_COOLDOWN_SECONDS', cast=float, default=30.0)
+
 
 def prepare_directories():
     if PRODUCTION and (len(SECRET_KEY) < 32 or not COOKIE_SECURE):

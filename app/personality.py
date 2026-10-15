@@ -119,11 +119,44 @@ def not_found():
     return (Speech()
             .add('pensativa', 'A ver...')
             .add('empatica', 'no encontré una pollera con eso, caserita.')
-            .add('amable', 'Mantén presionado el micrófono y dime qué color o qué fiesta buscas.'))
+            .add('amable', 'Dime qué color, código o qué fiesta buscas, te escucho.'))
 
 
 def empty_catalog():
     return Speech().add('empatica', 'Casera, aún no hay polleras registradas en el catálogo.')
+
+
+def autonomous_greeting(product=None):
+    speech = Speech()
+    if product:
+        price = money(product.precio_final)
+        speech.add('entusiasmada', random.choice([
+            '¡Hola, caserita! ¿Buscas alguna pollera para tu fiesta?',
+            '¡Hola, casera! Qué gusto verte.',
+            '¡Hola, caserita! Bienvenida a nuestra tienda.',
+        ]))
+        speech.add('alegre', f'Mira este modelo {product.nombre}, a {price} soles por alquiler.')
+        speech.add('curiosa', 'Dime qué color o código estás buscando, ¡te escucho!')
+    else:
+        speech.add('entusiasmada', '¡Hola, caserita! ¿Buscas alguna pollera para tu fiesta?')
+        speech.add('curiosa', 'Dime qué color o código estás buscando, ¡te escucho!')
+    return speech
+
+
+def silence_reminder():
+    speech = Speech()
+    speech.add('amable', random.choice([
+        'Puedes decirme el color o código que estás buscando, caserita.',
+        '¿Deseas ver algún modelo o color en especial? Dime nomás, te escucho.',
+        'Pregúntame sobre precios, tallas o colores, caserita, te escucho.',
+    ]))
+    return speech
+
+
+def farewell():
+    speech = Speech()
+    speech.add('despedida', '¡Gracias a ti, caserita! Que te vaya muy bonito en tu fiesta. ¡Aquí estaré si necesitas algo!')
+    return speech
 
 
 # Short fillers played instantly while the server looks things up.

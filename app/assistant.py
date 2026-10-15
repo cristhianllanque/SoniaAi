@@ -48,10 +48,13 @@ async def query_ollama(prompt, schema=schemas.ProductSelection):
         _generation_slots.release()
 
 
-async def select_product(message, products, current_code=None):
+async def select_product(message, products, current_code=None, context=None):
     text = normalize(message).strip()
     if not products:
         return None
+    if context and not current_code and context.current_code:
+        current_code = context.current_code
+
     # Exact codes always win over anything else.
     for product in products:
         if re.search(r'(?<![\w-])' + re.escape(normalize(product.codigo)) + r'(?![\w-])', text):
@@ -61,11 +64,21 @@ async def select_product(message, products, current_code=None):
         if normalize(product.nombre) in text:
             return product
     # Contextual reference to current product.
-    if current_code and any(word in text for word in ('esta', 'esa', 'precio', 'cuesta', 'incluye', 'talla')):
+    if current_code and any(word in text for word in ('esta', 'esa', 'precio', 'cuesta', 'vale', 'incluye', 'talla', 'disponible')):
         return next((p for p in products if p.codigo == current_code.upper()), None)
     # A code which does not exist must not silently turn into another product.
     if re.fullmatch(r'[a-z0-9_-]+', text) and any(c.isdigit() for c in text):
         return None
+
+    available_products = [p for p in products if getattr(p, 'estado', 'DISPONIBLE') == 'DISPONIBLE']
+    search_pool = available_products if available_products else products
+
+    # If asking for another model, prefer one not viewed yet in this session
+    if any(kw in text for kw in ('otra', 'otro modelo', 'otra pollera', 'mas modelos', 'que mas tienes')) and context:
+        viewed = set(context.viewed_codes or [])
+        unseen = [p for p in available_products if p.codigo not in viewed and p.codigo != current_code]
+        if unseen:
+            return unseen[0]
 
     # Smart deterministic search by color and name keywords:
     # General recommendations strictly prioritize available polleras.
@@ -73,9 +86,6 @@ async def select_product(message, products, current_code=None):
                   'para', 'por', 'me', 'quiero', 'ver', 'buscar', 'muestrame', 'tienes', 'hay',
                   'alguna', 'algun', 'cual', 'que', 'como', 'modelo', 'favor', 'casera', 'caserita'}
     tokens = [t for t in re.findall(r'[a-z0-9]+', text) if len(t) >= 3 and t not in stop_words]
-
-    available_products = [p for p in products if getattr(p, 'estado', 'DISPONIBLE') == 'DISPONIBLE']
-    search_pool = available_products if available_products else products
 
     if tokens:
         best_product = None

@@ -133,7 +133,18 @@ async def read_root(request: Request):
 
 @app.get('/api/config')
 def public_config():
-    return {'whatsapp_number': config.WHATSAPP_NUMBER}
+    return {
+        'whatsapp_number': config.WHATSAPP_NUMBER,
+        'autonomy': {
+            'enabled': config.AUTONOMY_ENABLED,
+            'presence_min_seconds': config.PRESENCE_MIN_SECONDS,
+            'face_facing_seconds': config.FACE_FACING_SECONDS,
+            'post_tts_pause_ms': config.POST_TTS_PAUSE_MS,
+            'silence_reminder_seconds': config.SILENCE_REMINDER_SECONDS,
+            'session_inactivity_seconds': config.SESSION_INACTIVITY_SECONDS,
+            'farewell_cooldown_seconds': config.FAREWELL_COOLDOWN_SECONDS,
+        }
+    }
 
 
 @app.get('/api/health')
@@ -158,6 +169,12 @@ def stop_vision():
 @app.get('/api/vision/status', dependencies=[Depends(auth.require_operator)])
 def vision_status():
     return get_engine().status()
+
+
+@app.post('/api/vision/cooldown', dependencies=[Depends(auth.require_operator)])
+def vision_cooldown(seconds: float = Query(30.0, ge=1.0, le=300.0)):
+    get_engine().set_cooldown(seconds)
+    return {'status': 'cooldown_set', 'duration': seconds}
 
 
 @app.post('/api/audio/unlock', dependencies=[Depends(auth.require_operator)])
@@ -188,6 +205,24 @@ async def generate_ofertas_audio(products=Depends(load_catalog)):
     return await spoken_response(speech, imagen_url=product.imagen_url)
 
 
+@app.get('/api/audio/saludo', dependencies=[Depends(limit_speech)])
+async def generate_saludo_audio(products=Depends(load_catalog)):
+    available = [p for p in products if getattr(p, 'estado', 'DISPONIBLE') == 'DISPONIBLE']
+    product = random.choice(available) if available else None
+    speech = personality.autonomous_greeting(product)
+    extra = {'action': 'greeting'}
+    if product:
+        extra['imagen_url'] = product.imagen_url
+        extra['pollera'] = product
+    return await spoken_response(speech, **extra)
+
+
+@app.get('/api/audio/recordatorio', dependencies=[Depends(limit_speech)])
+async def generate_recordatorio_audio():
+    speech = personality.silence_reminder()
+    return await spoken_response(speech, action='reminder')
+
+
 @app.get('/api/audio/detalles/{codigo}', dependencies=[Depends(limit_speech)])
 async def generate_detalles_audio(product=Depends(load_product)):
     speech = personality.presentation(product)
@@ -197,15 +232,32 @@ async def generate_detalles_audio(product=Depends(load_product)):
 @app.post('/api/chat', dependencies=[Depends(limit_speech)])
 async def chat_with_ai(context=Depends(load_chat_context)):
     chat_msg, products = context
-    product = await assistant.select_product(chat_msg.message, products, chat_msg.codigo_actual)
+    sess_ctx = chat_msg.context or schemas.ConversationContext(current_code=chat_msg.codigo_actual)
+    if chat_msg.codigo_actual and not sess_ctx.current_code:
+        sess_ctx.current_code = chat_msg.codigo_actual
+    
+    product = await assistant.select_product(chat_msg.message, products, chat_msg.codigo_actual, context=sess_ctx)
     if product:
+        sess_ctx.current_code = product.codigo
+        if product.codigo not in sess_ctx.viewed_codes:
+            sess_ctx.viewed_codes.append(product.codigo)
         if getattr(product, 'estado', 'DISPONIBLE') == 'ALQUILADA':
             speech, alt = personality.rented_presentation(product, products)
-            return await spoken_response(speech, action='show_pollera', pollera=alt or product)
+            target = alt or product
+            sess_ctx.current_code = target.codigo
+            if target.codigo not in sess_ctx.viewed_codes:
+                sess_ctx.viewed_codes.append(target.codigo)
+            return await spoken_response(speech, action='show_pollera', pollera=target, context=sess_ctx.model_dump())
         speech = personality.presentation(product)
-        return await spoken_response(speech, action='show_pollera', pollera=product)
+        return await spoken_response(speech, action='show_pollera', pollera=product, context=sess_ctx.model_dump())
+
+    # Check for farewell in message
+    normalized = assistant.normalize(chat_msg.message)
+    if conversation.detect_intent(normalized) == 'despedida':
+        return await spoken_response(personality.farewell(), action='farewell', pollera=None, context=sess_ctx.model_dump())
+
     speech = personality.not_found() if products else personality.empty_catalog()
-    return await spoken_response(speech, action='none', pollera=None)
+    return await spoken_response(speech, action='none', pollera=None, context=sess_ctx.model_dump())
 
 
 @app.post('/api/conversacion', dependencies=[Depends(limit_speech)])
@@ -214,8 +266,9 @@ async def conversacion_product(msg: schemas.ConversationMessage, db: Session = D
     catalog = db.query(models.Pollera).order_by(models.Pollera.codigo).limit(200).all()
     others = [schemas.Pollera.model_validate(p) for p in catalog if p.codigo != product.codigo]
     product_schema = schemas.Pollera.model_validate(product)
-    reply = await conversation.respond(msg.message, product_schema, others)
-    extra = {'action': reply.action}
+    sess_ctx = msg.context or schemas.ConversationContext(current_code=product.codigo)
+    reply = await conversation.respond(msg.message, product_schema, others, context=sess_ctx)
+    extra = {'action': reply.action, 'context': (reply.context.model_dump() if hasattr(reply.context, 'model_dump') else sess_ctx.model_dump())}
     if reply.product:
         extra['pollera'] = reply.product
     return await spoken_response(reply.speech, **extra)

@@ -69,10 +69,22 @@ class Pollera(BaseModel):
 
 
 
+class ConversationContext(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    session_id: str | None = None
+    current_code: str | None = None
+    last_color: str | None = None
+    last_talla: str | None = None
+    viewed_codes: list[str] = Field(default_factory=list)
+    last_intent: str | None = None
+    last_robot_question: str | None = None
+
+
 class ChatMessage(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     message: str = Field(min_length=1, max_length=1000)
     codigo_actual: str | None = Field(default=None, max_length=50)
+    context: ConversationContext | None = None
 
 
 class ProductSelection(BaseModel):
@@ -84,6 +96,7 @@ class ConversationMessage(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     message: str = Field(min_length=1, max_length=1000)
     codigo: str = Field(min_length=1, max_length=50)
+    context: ConversationContext | None = None
 
 
 class IntentSelection(BaseModel):

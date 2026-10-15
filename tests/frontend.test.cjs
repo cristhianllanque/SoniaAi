@@ -267,3 +267,69 @@ test('admin inventory renders rental buttons and status badges correctly', () =>
     assert.equal(actionsRent.children[2].className, 'btn-rental-return btn-sm');
 });
 
+test('setPhase listening activates circular status indicators across screens', () => {
+    const h = harness();
+    h.run("setPhase('listening')");
+    assert.equal(h.element('heroFace').classList.contains('listening'), true);
+    assert.equal(h.element('miniFace').classList.contains('listening'), true);
+    assert.equal(h.element('heroSpeechStatusOrb').classList.contains('listening'), true);
+    assert.equal(h.element('speechStatusOrb').classList.contains('listening'), true);
+    assert.equal(h.element('micBtn').classList.contains('active-listening'), true);
+    assert.equal(h.element('productMicBtn').classList.contains('active-listening'), true);
+    assert.equal(h.element('heroOrbText').textContent, 'Escuchando');
+    assert.equal(h.element('orbText').textContent, 'Escuchando');
+
+    h.run("setPhase('idle')");
+    assert.equal(h.element('heroSpeechStatusOrb').classList.contains('listening'), false);
+    assert.equal(h.element('micBtn').classList.contains('active-listening'), false);
+    assert.equal(h.element('productMicBtn').classList.contains('active-listening'), false);
+});
+
+test('acoustic protection: incoming speech is discarded while robot speaks', () => {
+    const h = harness();
+    h.run(`
+        recognition = { start(){}, stop(){}, abort(){} };
+        phase = 'speaking';
+        recognitionTicket = sequence;
+        let eventHandled = false;
+        // Simulate onresult firing while speaking
+        const resultEvent = {
+            results: [[{transcript: 'Hola robot'}]]
+        };
+        resultEvent.results[0].isFinal = true;
+    `);
+    assert.equal(h.run('accumulatedTranscript'), '');
+    assert.equal(h.run('isSpeakingDetected'), false);
+    assert.equal(h.calls.length, 0);
+});
+
+test('farewell triggers cooldown request and resets session context', async () => {
+    const h = harness();
+    h.run("sessionContext.current_code = 'P001'; sessionContext.last_color = 'rojo';");
+    h.context.api.request = async (url, options) => {
+        h.calls.push({url, options});
+        return {};
+    };
+    await h.run("applySpeech({text: '¡Hasta luego caserita!', action: 'farewell', audio_url: null}, sequence)");
+    assert.ok(h.calls.some(c => c.url.includes('/api/vision/cooldown')));
+    assert.equal(h.run('sessionContext.current_code'), null);
+    assert.equal(h.run('sessionContext.last_color'), null);
+});
+
+test('session context carries current_code and updates viewed_codes', async () => {
+    const h = harness();
+    h.context.api.request = async (url, options) => {
+        h.calls.push({url, options});
+        return {
+            text: 'Aquí tienes la pollera roja',
+            action: 'show_pollera',
+            pollera: {codigo: 'ROJA01', nombre: 'Pollera Roja', talla: 'M', precio_final: 90, precio_base: 120},
+            context: {current_code: 'ROJA01', last_color: 'rojo', viewed_codes: ['ROJA01']}
+        };
+    };
+    await h.run("enviarMensajeVoz('tienes una roja')");
+    assert.equal(h.run("sessionContext.current_code"), 'ROJA01');
+    assert.equal(h.run("sessionContext.last_color"), 'rojo');
+    assert.deepEqual(h.run("sessionContext.viewed_codes"), ['ROJA01']);
+});
+

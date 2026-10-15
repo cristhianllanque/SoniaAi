@@ -39,7 +39,11 @@
                 <button id="searchBtn" aria-label="Buscar"><i class="fas fa-search"></i></button>
                 <button id="micBtn" aria-label="Mantén presionado para hablar"><i class="fas fa-microphone"></i></button>
             </div>
-            <div class="interaction-hint" id="interactionHint">Mantén presionado el micrófono para hablar...</div>
+            <div class="speech-status-orb hero-orb" id="heroSpeechStatusOrb">
+                <span class="orb-dot"></span>
+                <span class="orb-text" id="heroOrbText">En espera</span>
+            </div>
+            <div class="interaction-hint" id="interactionHint">Mantén presionado el micrófono para hablar o acércate...</div>
             <div class="detection-controls">
                 <button id="detectionBtn" type="button" aria-pressed="false">Activar detección</button>
                 <span id="detectionStatus" role="status">Detección desactivada</span>
