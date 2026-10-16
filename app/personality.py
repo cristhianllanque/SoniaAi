@@ -76,12 +76,52 @@ def _extras(product):
     return extras
 
 
-def presentation(product, opener=None, invite=True):
+def get_vocative(context=None, allow_empty=True):
+    """Rotates vocatives naturally avoiding repeating the same one."""
+    used = getattr(context, 'used_vocatives', []) if context else []
+    # 40% empty so we don't spam vocatives on every phrase
+    pool = ['caserita', 'amiga', 'joven', 'señorita', 'amigo']
+    if allow_empty:
+        pool.extend(['', '', ''])
+    last = used[-1] if used else None
+    available = [v for v in pool if not last or v != last]
+    choice = random.choice(available or pool)
+    if choice and context and hasattr(context, 'used_vocatives'):
+        context.used_vocatives.append(choice)
+        if len(context.used_vocatives) > 5:
+            context.used_vocatives.pop(0)
+    return choice
+
+
+def presentation(product, opener=None, invite=True, context=None):
     """Full product presentation shown after a search."""
     speech = Speech()
-    speech.add('entusiasmada', opener or random.choice([
-        '¡A ver, a ver, mira nomás!', '¡Uy, esta te va a encantar!', '¡Ay, qué linda, caserita!',
-    ]))
+    voc = get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ''
+    reason = getattr(context, 'celebration_reason', None) if context else None
+
+    if opener:
+        first = opener
+    elif reason and 'navidad' in str(reason).lower():
+        first = random.choice([
+            f'¡Para Navidad este modelo queda pintado{voc_suffix}!',
+            f'¡Mira qué belleza navideña{voc_suffix}!',
+        ])
+    elif reason and 'cumplean' in str(reason).lower():
+        first = random.choice([
+            f'¡Ideal para lucirte en ese cumpleaños{voc_suffix}!',
+            f'¡Para festejar como se debe{voc_suffix}, mira esta!',
+        ])
+    else:
+        first = random.choice([
+            f'¡A ver, a ver, mira nomás{voc_suffix}!',
+            f'¡Uy, esta te va a encantar{voc_suffix}!',
+            f'¡Fíjate en esta belleza{voc_suffix}!',
+            f'¡Qué linda opción tenemos aquí{voc_suffix}!',
+            f'¡Mira este modelo tan elegante{voc_suffix}!',
+        ])
+
+    speech.add('entusiasmada', first)
     speech.add('alegre', f'Te presento {product.nombre}, en talla {product.talla}, '
                          f'a {money(product.precio_final)} soles por alquiler.')
     if _has_discount(product):
@@ -92,7 +132,11 @@ def presentation(product, opener=None, invite=True):
         speech.add('alegre', f"Viene completita, incluye {' y '.join(extras)}.")
     speech.add('amable', 'Consulta disponibilidad y condiciones por WhatsApp.')
     if invite:
-        speech.add('curiosa', '¿Tienes alguna consulta sobre esta pollera? Pregúntame nomás, te escucho.')
+        speech.add('curiosa', random.choice([
+            '¿Tienes alguna consulta sobre esta pollera? Pregúntame nomás, te escucho.',
+            '¿Te gustaría saber algo más de este modelo? Con confianza, te escucho.',
+            '¿Qué te parece? Pregúntame sobre tallas o lo que gustes, te escucho.',
+        ]))
     return speech
 
 
@@ -101,7 +145,7 @@ def offer(product, educate=True):
     speech = Speech()
     price = money(product.precio_final)
     speech.add('entusiasmada', random.choice([
-        '¡Hola, caserita! ¿Buscas pollera para tu fiesta?', '¡Pase, pase, casera!', '¡Mira qué linda pollera tenemos!',
+        '¡Hola! ¿Buscas pollera para tu fiesta?', '¡Pase adelante!', '¡Mira qué linda pollera tenemos!',
     ]))
     speech.add('alegre', f'Conoce {product.nombre}, en talla {product.talla}, a {price} soles por alquiler.')
     if educate:
@@ -115,69 +159,137 @@ def offer(product, educate=True):
     return speech
 
 
-def not_found():
+def not_found(context=None):
+    voc = get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ', caserita'
     return (Speech()
             .add('pensativa', 'A ver...')
-            .add('empatica', 'no encontré una pollera con eso, caserita.')
+            .add('empatica', f'no encontré una pollera con eso{voc_suffix}.')
             .add('amable', 'Dime qué color, código o qué fiesta buscas, te escucho.'))
 
 
 def empty_catalog():
-    return Speech().add('empatica', 'Casera, aún no hay polleras registradas en el catálogo.')
+    return Speech().add('empatica', 'Aún no hay polleras registradas en el catálogo.')
 
 
-def autonomous_greeting():
-    """Warm autonomous greeting when camera detects interest.
-    Strictly keeps focus on the robot face and invites customer interaction without pushing a specific product.
-    """
+def autonomous_greeting(context=None):
+    """Warm autonomous greeting when camera detects interest."""
     speech = Speech()
-    speech.add('entusiasmada', random.choice([
-        '¡Hola, caserita! Tenemos unas polleras muy bonitas para tus fiestas.',
-        '¡Hola, casera! Qué gusto verte, tenemos hermosas polleras.',
-        '¡Hola, caserita! Bienvenida a nuestra tienda.',
-    ]))
-    speech.add('curiosa', random.choice([
-        '¿Buscas algún color o código en especial? Te escucho.',
-        '¿Qué modelo o color de pollera estás buscando hoy? Dime nomás.',
-        'Dime qué color o código necesitas y te lo muestro con gusto.',
-    ]))
+    options = [
+        ('¡Hola, caserita! Tenemos unas polleras muy bonitas para tus fiestas.', '¿Buscas algún color o código en especial? Te escucho.'),
+        ('¡Hola, casera! Qué gusto saludarte, bienvenida a nuestra tienda.', '¿Qué modelo o color de pollera estás buscando hoy? Dime nomás.'),
+        ('¡Pase adelante, caserita! Tenemos modelos preciosos para alquiler.', 'Dime qué color o código necesitas y te lo muestro con gusto.'),
+        ('¡Hola, caserita! Qué alegría verte por aquí.', 'Cuéntame qué fiesta tienes en mente y te enseño las mejores opciones.')
+    ]
+    g1, g2 = random.choice(options)
+    speech.add('entusiasmada', g1)
+    speech.add('curiosa', g2)
     return speech
 
 
-def greeting():
+def greeting(context=None):
     """Warm verbal reply to a customer greeting without navigating away from the face."""
     speech = Speech()
+    voc = get_vocative(context)
+    voc_prefix = f'¡Hola, {voc}! ' if voc else '¡Hola! '
     speech.add('entusiasmada', random.choice([
-        '¡Hola, caserita! Qué gusto tenerte por aquí.',
-        '¡Hola, casera! Bienvenida a la tienda.',
-        '¡Hola, caserita! ¿Cómo estás?',
+        f'{voc_prefix}Qué gusto tenerte por aquí.',
+        f'{voc_prefix}Bienvenida a la tienda.',
+        f'{voc_prefix}¿Cómo estás? ¡Qué alegría saludarte!',
     ]))
-    speech.add('curiosa', '¿Buscas alguna pollera para tu fiesta? Dime el color o código que estás buscando, te escucho.')
+    speech.add('curiosa', random.choice([
+        '¿Buscas alguna pollera para tu fiesta? Cuéntame qué color o código necesitas, te escucho.',
+        '¿Para qué ocasión estás buscando traje hoy? Dime con confianza, te escucho.',
+    ]))
     return speech
 
 
-def general_inquiry(products=None):
-    """Verbal overview for general questions like '¿qué polleras tienes?' without picking an arbitrary product card."""
+def general_inquiry(products=None, context=None):
+    """Verbal overview for general questions like '¿qué polleras tienes?'."""
     speech = Speech()
-    speech.add('alegre', 'Tenemos hermosas polleras de fiesta para alquiler en colores como rojo, morado, azul, verde y fucsia.')
-    speech.add('curiosa', '¿Tienes en mente algún color, talla o código en especial? Dime y te la muestro, caserita.')
+    voc = get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ''
+    speech.add('alegre', f'Tenemos hermosas polleras de fiesta para alquiler en colores como rojo, morado, azul, verde y fucsia{voc_suffix}.')
+    speech.add('curiosa', '¿Tienes en mente algún color, talla o qué tipo de fiesta estás planeando? Dime y te muestro las mejores opciones.')
     return speech
 
 
-def silence_reminder():
+def celebration_advice(motive: str, products=None, context=None):
+    """Contextual styling advice for specific occasions (Christmas, birthdays, weddings, patronal festivals)."""
     speech = Speech()
+    voc = get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ''
+    m = (motive or '').lower()
+    if 'navidad' in m:
+        speech.add('entusiasmada', f'¡Qué bonita ocasión{voc_suffix}!')
+        speech.add('alegre', 'Si te gustan los colores clásicos de Navidad, podemos buscar una roja. Aunque una verde también quedaría preciosa.')
+        speech.add('curiosa', '¿Cuál prefieres?')
+    elif 'cumplean' in m:
+        speech.add('entusiasmada', f'¡Entonces hay que buscar algo especial{voc_suffix}!')
+        speech.add('curiosa', '¿Es una fiesta elegante o más tradicional? Así te recomiendo un modelo que vaya con la ocasión.')
+    elif any(k in m for k in ('boda', 'matrimonio')):
+        speech.add('alegre', f'¡Qué linda celebración{voc_suffix}!')
+        speech.add('curiosa', 'Para una boda lucen preciosos los tonos palo rosa, crema o un azul distinguido con mantita fina. ¿Qué tono te gustaría lucir?')
+    elif any(k in m for k in ('patronal', 'morenada', 'diablada', 'caporal', 'candelaria', 'carnaval')):
+        speech.add('entusiasmada', f'¡Para esa fiesta hay que lucirse con todo el brillo{voc_suffix}!')
+        speech.add('curiosa', 'Tenemos trajes con bordados muy finos que destacan al bailar. ¿Qué color tienes en mente?')
+    else:
+        speech.add('alegre', f'¡Qué buen motivo para festejar{voc_suffix}!')
+        speech.add('curiosa', f'Para esa ocasión tenemos opciones preciosas. ¿Buscas algún color o estilo en especial?')
+    return speech
+
+
+def price_comment_response(comment_type: str, product=None, context=None):
+    """Witty, sympathetic response to budget remarks ('está barata' / 'está cara')."""
+    speech = Speech()
+    voc = get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ''
+    if comment_type == 'barata':
+        speech.add('alegre', f'¡Y eso que todavía no te he mostrado las otras opciones{voc_suffix}!')
+        speech.add('curiosa', 'Hay modelos preciosos para distintos presupuestos. ¿Te gustaría ver otro modelo o te gusta este?')
+    else:
+        speech.add('empatica', f'Te entiendo perfectamente{voc_suffix}, cada fiesta tiene su presupuesto.')
+        speech.add('amable', 'El valor refleja la calidad del bordado y que viene completita, pero también tenemos modelos más económicos. ¿Qué presupuesto tienes en mente?')
+    return speech
+
+
+def casual_chit_chat(text: str, context=None):
+    """Spontaneous, warm response for light banter, compliments, or casual questions."""
+    import unicodedata
+    speech = Speech()
+    voc = get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ''
+    t = unicodedata.normalize('NFKD', text or '').encode('ASCII', 'ignore').decode('utf-8').lower()
+    if any(k in t for k in ('chiste', 'gracios', 'broma')):
+        speech.add('alegre', f'¡Me encanta la gente con buen humor{voc_suffix}!')
+        speech.add('curiosa', 'Dicen que fiesta sin buena pollera es como caldo sin sal. A ver, cuéntame qué estás buscando.')
+    elif any(k in t for k in ('linda', 'guapa', 'bonita', 'coqueta', 'guapo')):
+        speech.add('entusiasmada', f'¡Ay, qué simpático detalle{voc_suffix}!')
+        speech.add('alegre', 'Aquí lo que sobran son polleras hermosas para que tú también brilles en tu evento. ¿Tienes algún color favorito?')
+    elif any(k in t for k in ('frio', 'calor', 'clima')):
+        speech.add('alegre', f'¡Uy sí, el clima a veces nos sorprende{voc_suffix}!')
+        speech.add('curiosa', 'Pero zapateando con una buena pollera se te quita cualquier frío. ¿Para qué fecha es tu fiesta?')
+    else:
+        speech.add('alegre', f'¡Qué gusto conversar contigo{voc_suffix}!')
+        speech.add('curiosa', 'Aquí estoy lista para ayudarte a encontrar el traje ideal. ¿Tienes algún color o modelo en mente?')
+    return speech
+
+
+def silence_reminder(context=None):
+    speech = Speech()
+    voc = get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ', caserita'
     speech.add('amable', random.choice([
-        'Puedes decirme el color o código que estás buscando, caserita.',
-        '¿Deseas ver algún modelo o color en especial? Dime nomás, te escucho.',
-        'Pregúntame sobre precios, tallas o colores, caserita, te escucho.',
+        f'Puedes decirme el color o código que estás buscando{voc_suffix}.',
+        f'¿Qué modelo o color estás buscando{voc_suffix}? Dime nomás, te escucho.',
+        f'Si estás buscando precios, tallas o modelos{voc_suffix}, dime con confianza, te escucho.',
     ]))
     return speech
 
 
-def farewell():
+def farewell(context=None):
     speech = Speech()
-    speech.add('despedida', '¡Gracias a ti, caserita! Que te vaya muy bonito en tu fiesta. ¡Aquí estaré si necesitas algo!')
-    return speech
+    return speech.add('despedida', '¡Gracias a ti, caserita! Que te vaya muy bonito en tu fiesta. ¡Aquí estaré si necesitas algo!')
 
 
 # Short fillers played instantly while the server looks things up.

@@ -100,10 +100,12 @@ def _answer(intent, text, product, others, context=None):
     price = money(product.precio_final)
     discounted = float(product.precio_final) < float(product.precio_base)
     speech = Speech()
+    voc = personality.get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ''
 
     if intent == 'detalle_desconocido':
         speech.add('pensativa', 'A ver...')
-        speech.add('empatica', 'ese detalle no lo tengo registrado en mi catálogo, caserita.')
+        speech.add('empatica', f'ese detalle no lo tengo registrado en mi catálogo{voc_suffix}.')
         if _has(text, r'material|tela|hech[ao]|bordad\w*'):
             speech.add('amable', f'Lo que sí te puedo contar es esto: {product.descripcion}')
         speech.add('amable', 'Pregúntalo por WhatsApp y te responden al toque.')
@@ -111,16 +113,16 @@ def _answer(intent, text, product, others, context=None):
 
     if intent == 'reserva':
         if getattr(product, 'estado', 'DISPONIBLE') == 'ALQUILADA':
-            speech.add('pensativa', 'Esta pollera se encuentra temporalmente alquilada, caserita.')
+            speech.add('pensativa', f'Esta pollera se encuentra temporalmente alquilada{voc_suffix}.')
             speech.add('amable', 'Toca el botón verde de WhatsApp para consultar su fecha de retorno o coordinar una reserva posterior.')
             return Reply(speech, 'answer', None, context)
-        speech.add('alegre', '¡Claro que sí!')
+        speech.add('alegre', f'¡Claro que sí{voc_suffix}!')
         speech.add('amable', 'Para ver disponibilidad y separarla, toca el botón verde de WhatsApp '
                              'o escanea el código QR con tu celular. ¡Está disponible ahora mismo!')
         return Reply(speech, 'answer', None, context)
 
     if intent == 'descuento':
-        speech.add('empatica', f'Mira, caserita, el precio de mi catálogo es {price} soles por alquiler.')
+        speech.add('empatica', f'Mira{voc_suffix}, el precio de mi catálogo es {price} soles por alquiler.')
         if discounted:
             speech.add('alegre', f'Ya está rebajadita, antes costaba {money(product.precio_base)} soles.')
         speech.add('curiosa', 'Pero escríbenos por WhatsApp y consulta si te pueden hacer un descuentito.')
@@ -142,11 +144,11 @@ def _answer(intent, text, product, others, context=None):
                     context.current_code = match.codigo
                     if match.codigo not in context.viewed_codes:
                         context.viewed_codes.append(match.codigo)
-                return Reply(presentation(match, opener=f'¡Sí tengo! Mira esta en {color}, caserita.'),
+                return Reply(presentation(match, opener=f'¡Sí tengo! Mira esta en {color}{voc_suffix}.', context=context),
                              'show_pollera', match, context)
             speech.add('pensativa', 'A ver...')
-            speech.add('empatica', f'en mi inventario no veo una pollera en {color}.')
-            speech.add('alegre', 'Pero esta te quedaría bien bonita, caserita.')
+            speech.add('empatica', f'en mi inventario no veo una pollera en {color}{voc_suffix}.')
+            speech.add('alegre', f'Pero esta te quedaría bien bonita{voc_suffix}.')
             return Reply(speech, 'answer', None, context)
         if wanted and not asks_other:
             speech.add('alegre', f'¡Sí! Esta es en {wanted[0]}, como ves en la foto.')
@@ -158,13 +160,13 @@ def _answer(intent, text, product, others, context=None):
                 speech.add('alegre', ', '.join(names[:-1]) + (' y ' if len(names) > 1 else '') + names[-1] + '.')
                 speech.add('amable', 'Dime cuál quieres ver o dime su color.')
             else:
-                speech.add('empatica', 'En mi inventario no veo otra pollera de otro color.')
-                speech.add('alegre', 'Pero esta te quedaría bien bonita, caserita.')
+                speech.add('empatica', f'En mi inventario no veo otra pollera de otro color{voc_suffix}.')
+                speech.add('alegre', f'Pero esta te quedaría bien bonita{voc_suffix}.')
             return Reply(speech, 'answer', None, context)
         if own:
             speech.add('amable', f'Por lo que veo en mi catálogo, es en {own[0]}.')
         else:
-            speech.add('amable', 'Mírala en la foto, caserita. El tono exacto te lo confirman por WhatsApp.')
+            speech.add('amable', f'Mírala en la foto{voc_suffix}. El tono exacto te lo confirman por WhatsApp.')
         return Reply(speech, 'answer', None, context)
 
     if intent == 'otro_modelo':
@@ -177,15 +179,15 @@ def _answer(intent, text, product, others, context=None):
                 if context:
                     context.current_code = candidate.codigo
                     context.viewed_codes.append(candidate.codigo)
-                return Reply(presentation(candidate, opener='¡Claro, caserita! Mira esta otra opción.'),
+                return Reply(presentation(candidate, opener=f'¡Claro{voc_suffix}! Mira esta otra opción.', context=context),
                              'show_pollera', candidate, context)
         names = [p.nombre for p in available_others[:3]]
         if names:
-            speech.add('alegre', '¡Claro que sí, caserita! En catálogo disponible también tengo:')
+            speech.add('alegre', f'¡Claro que sí{voc_suffix}! En catálogo disponible también tengo:')
             speech.add('curiosa', ', '.join(names[:-1]) + (' y ' if len(names) > 1 else '') + names[-1] + '.')
             speech.add('amable', 'Dime cuál te gustaría ver.')
         else:
-            speech.add('empatica', 'Por ahora es la única pollera disponible que tengo en este catálogo, caserita.')
+            speech.add('empatica', f'Por ahora es la única pollera disponible que tengo en este catálogo{voc_suffix}.')
         return Reply(speech, 'answer', None, context)
 
     if intent == 'talla':
@@ -209,9 +211,9 @@ def _answer(intent, text, product, others, context=None):
                     context.current_code = alt.codigo
                     if alt.codigo not in context.viewed_codes:
                         context.viewed_codes.append(alt.codigo)
-                return Reply(presentation(alt, opener=f'¡Sí tengo en talla {wanted_size}! Mira esta opción, caserita.'),
+                return Reply(presentation(alt, opener=f'¡Sí tengo en talla {wanted_size}! Mira esta opción{voc_suffix}.', context=context),
                              'show_pollera', alt, context)
-            speech.add('pensativa', f'En este catálogo no tengo este modelo en talla {wanted_size}, caserita.')
+            speech.add('pensativa', f'En este catálogo no tengo este modelo en talla {wanted_size}{voc_suffix}.')
             speech.add('amable', f'Esta que ves es talla {product.talla}. Pero escríbenos por WhatsApp para consultar si te la pueden ajustar.')
             return Reply(speech, 'answer', None, context)
 
@@ -230,7 +232,7 @@ def _answer(intent, text, product, others, context=None):
         asked = [name for name in ('manta', 'sombrero') if name in text]
         missing = [name for name in asked if name not in extras]
         if missing:
-            speech.add('empatica', f"Esta no incluye {' ni '.join(missing)}, caserita.")
+            speech.add('empatica', f"Esta no incluye {' ni '.join(missing)}{voc_suffix}.")
             if extras:
                 speech.add('alegre', f"Pero sí viene con {' y '.join(extras)}.")
             speech.add('amable', 'Pregunta por WhatsApp si te lo pueden conseguir aparte.')
@@ -241,7 +243,7 @@ def _answer(intent, text, product, others, context=None):
         return Reply(speech, 'answer', None, context)
 
     if intent == 'precio':
-        speech.add('alegre', f'Sí, caserita, está a {price} soles por alquiler.')
+        speech.add('alegre', f'Sí, está a {price} soles por alquiler{voc_suffix}.')
         if discounted:
             speech.add('entusiasmada', f'¡Ya está rebajada, antes costaba {money(product.precio_base)}!')
         speech.add('curiosa', 'Y por WhatsApp puedes consultar si te hacen un descuentito.')
@@ -253,18 +255,18 @@ def _answer(intent, text, product, others, context=None):
         return Reply(speech, 'answer', None, context)
 
     if intent == 'saludo':
-        speech.add('alegre', '¡Hola, caserita!')
+        speech.add('alegre', f'¡Hola{voc_suffix}!')
         speech.add('curiosa', 'Pregúntame lo que quieras de esta pollera: precio, talla o lo que incluye.')
         return Reply(speech, 'answer', None, context)
 
     if intent == 'gusto':
-        speech.add('entusiasmada', '¡Ay, qué bueno que te gustó!')
+        speech.add('entusiasmada', f'¡Ay, qué bueno que te gustó{voc_suffix}!')
         speech.add('amable', 'Para alquilarla, escanea el código QR o toca el botón de WhatsApp, '
                              'y te confirman la disponibilidad.')
         return Reply(speech, 'answer', None, context)
 
     if intent == 'despedida':
-        return Reply(personality.farewell(), 'farewell', None, context)
+        return Reply(personality.farewell(context), 'farewell', None, context)
 
     return None
 
@@ -278,7 +280,8 @@ async def respond(message, product, others, context=None):
         context.viewed_codes.append(product.codigo)
 
     text = normalize(message).strip()
-    # Another catalogue item named explicitly: show it or explain rented status
+
+    # 1. Check if user is asking for another catalogue item explicitly
     for other in others:
         other_code = normalize(other.codigo)
         other_name = normalize(other.nombre)
@@ -288,7 +291,7 @@ async def respond(message, product, others, context=None):
                 speech, alt = personality.rented_presentation(other, others)
                 target = alt or other
             else:
-                speech = presentation(other, opener='¡A ver, a ver, aquí la tienes!')
+                speech = presentation(other, opener='¡A ver, a ver, aquí la tienes!', context=context)
             context.current_code = target.codigo
             if target.codigo not in context.viewed_codes:
                 context.viewed_codes.append(target.codigo)
@@ -300,20 +303,87 @@ async def respond(message, product, others, context=None):
                 speech, alt = personality.rented_presentation(other, others)
                 target = alt or other
             else:
-                speech = presentation(other, opener='¡A ver, a ver, aquí la tienes!')
+                speech = presentation(other, opener='¡A ver, a ver, aquí la tienes!', context=context)
             context.current_code = target.codigo
             if target.codigo not in context.viewed_codes:
                 context.viewed_codes.append(target.codigo)
             return Reply(speech, 'show_pollera', target, context)
-    intent = detect_intent(text) or await classify_with_model(message)
+
+    # 2. Check for farewell
+    if detect_intent(text) == 'despedida':
+        return Reply(personality.farewell(context), 'farewell', None, context)
+
+    # 3. Extract celebration reason or budget perception from message
+    if 'navidad' in text:
+        context.celebration_reason = 'Navidad'
+    elif 'cumplean' in text:
+        context.celebration_reason = 'cumpleaños'
+    elif any(k in text for k in ('boda', 'matrimoni')):
+        context.celebration_reason = 'boda'
+    elif any(k in text for k in ('patronal', 'morenada', 'diablada', 'caporal', 'candelaria', 'carnaval')):
+        context.celebration_reason = 'fiesta patronal'
+
+    if any(k in text for k in ('barat', 'economi', 'ganga', 'regalo')):
+        context.presupuesto = 'económico'
+    elif any(k in text for k in ('caro', 'cara', 'costos')):
+        context.presupuesto = 'ajustado'
+
+    # 4. Price perception remarks ("está barata" / "está cara")
+    if any(k in text for k in ('barat', 'economi', 'ganga', 'caro', 'cara', 'costos')) and not _has(text, r'descuent\w*|rebaj\w*|ultimo precio|precio|cuanto|cuesta|soles'):
+        comment_type = 'barata' if any(k in text for k in ('barat', 'economi', 'ganga')) else 'cara'
+        speech = personality.price_comment_response(comment_type, product, context)
+        return Reply(speech, 'answer', None, context)
+
+    # 5. Check for recognized product-specific intents
+    intent = detect_intent(text)
     if intent:
         context.last_intent = intent
-    reply = _answer(intent, text, product, others, context=context) if intent else None
-    if reply:
-        return reply
+        reply = _answer(intent, text, product, others, context=context)
+        if reply:
+            return reply
+
+    # 6. Celebration motive advice
+    if any(k in text for k in ('navidad', 'cumplean', 'boda', 'matrimoni', 'patronal', 'candelaria', 'carnaval')):
+        speech = personality.celebration_advice(context.celebration_reason, [product] + others, context)
+        return Reply(speech, 'answer', None, context)
+
+    # 7. Casual chit-chat
+    if any(k in text for k in ('chiste', 'broma', 'gracios', 'linda', 'guapa', 'bonita', 'frio', 'calor', 'clima', 'como te llamas', 'quien eres')):
+        speech = personality.casual_chit_chat(message, context)
+        return Reply(speech, 'answer', None, context)
+
+    # 8. Try Ollama conversational response
+    ollama_reply = await assistant.generate_conversational_response(
+        message=message,
+        products=[product] + others,
+        current_product=product,
+        context=context
+    )
+    if ollama_reply and getattr(ollama_reply, 'texto', None):
+        if getattr(ollama_reply, 'codigo_mostrar', None) and ollama_reply.codigo_mostrar.upper() != product.codigo.upper():
+            matched = next((p for p in others if p.codigo.upper() == ollama_reply.codigo_mostrar.upper()), None)
+            if matched:
+                context.current_code = matched.codigo
+                if matched.codigo not in context.viewed_codes:
+                    context.viewed_codes.append(matched.codigo)
+                speech = Speech().add(ollama_reply.emocion or 'alegre', ollama_reply.texto)
+                return Reply(speech, 'show_pollera', matched, context)
+        speech = Speech().add(ollama_reply.emocion or 'alegre', ollama_reply.texto)
+        return Reply(speech, 'answer', None, context)
+
+    # 9. Fallback intent classification with model
+    model_intent = await classify_with_model(message)
+    if model_intent:
+        context.last_intent = model_intent
+        reply = _answer(model_intent, text, product, others, context=context)
+        if reply:
+            return reply
+
+    voc = personality.get_vocative(context)
+    voc_suffix = f', {voc}' if voc else ', caserita'
     return Reply(Speech()
                  .add('pensativa', 'A ver...')
-                 .add('empatica', 'eso no lo sé bien, caserita.')
+                 .add('empatica', f'eso no lo sé con certeza{voc_suffix}.')
                  .add('curiosa', 'Te puedo contar del precio, la talla o lo que incluye. '
                                  'Para otras consultas, escríbenos por WhatsApp.'),
                  'answer', None, context)

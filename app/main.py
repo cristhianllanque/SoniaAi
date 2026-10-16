@@ -223,6 +223,15 @@ async def generate_detalles_audio(product=Depends(load_product)):
     return await spoken_response(speech, pollera=product, action='show_pollera')
 
 
+def _record_history(context: schemas.ConversationContext, user_text: str, assistant_text: str):
+    if not hasattr(context, 'chat_history') or context.chat_history is None:
+        context.chat_history = []
+    context.chat_history.append({'role': 'cliente', 'text': user_text})
+    context.chat_history.append({'role': 'sonia', 'text': assistant_text})
+    if len(context.chat_history) > 6:
+        context.chat_history = context.chat_history[-6:]
+
+
 @app.post('/api/chat', dependencies=[Depends(limit_speech)])
 async def chat_with_ai(context=Depends(load_chat_context)):
     chat_msg, products = context
@@ -235,18 +244,58 @@ async def chat_with_ai(context=Depends(load_chat_context)):
 
     # 1. Check for farewell in message
     if conversation.detect_intent(clean_msg) == 'despedida':
-        return await spoken_response(personality.farewell(), action='farewell', pollera=None, context=sess_ctx.model_dump())
+        speech = personality.farewell(sess_ctx)
+        _record_history(sess_ctx, chat_msg.message, speech.text)
+        return await spoken_response(speech, action='farewell', pollera=None, context=sess_ctx.model_dump())
 
-    # 2. Check for simple greeting ("hola", "buenos dias", "buenas") -> Answer warmly without opening productView
+    # 2. Extract celebration motives and budget perception
+    if 'navidad' in clean_msg:
+        sess_ctx.celebration_reason = 'Navidad'
+    elif 'cumplean' in clean_msg:
+        sess_ctx.celebration_reason = 'cumpleaños'
+    elif any(k in clean_msg for k in ('boda', 'matrimoni')):
+        sess_ctx.celebration_reason = 'boda'
+    elif any(k in clean_msg for k in ('patronal', 'morenada', 'diablada', 'caporal', 'candelaria', 'carnaval')):
+        sess_ctx.celebration_reason = 'fiesta patronal'
+
+    if any(k in clean_msg for k in ('barat', 'economi', 'ganga', 'regalo')):
+        sess_ctx.presupuesto = 'económico'
+    elif any(k in clean_msg for k in ('caro', 'cara', 'costos')):
+        sess_ctx.presupuesto = 'ajustado'
+
+    # 3. Simple greeting ("hola", "buenos dias", "buenas")
     if conversation.detect_intent(clean_msg) == 'saludo' and not any(k in clean_msg for k in ('codigo', 'pollera', 'color', 'talla', 'precio', 'modelo', 'cuanto')):
-        return await spoken_response(personality.greeting(), action='answer', pollera=None, context=sess_ctx.model_dump())
+        speech = personality.greeting(sess_ctx)
+        _record_history(sess_ctx, chat_msg.message, speech.text)
+        return await spoken_response(speech, action='answer', pollera=None, context=sess_ctx.model_dump())
 
-    # 3. Check for general questions like "¿qué polleras tienes?", "¿qué tienes?", "¿qué hay?"
+    # 4. General questions like "¿qué polleras tienes?", "¿qué tienes?", "¿qué hay?"
     is_general_inquiry = any(clean_msg.startswith(p) or clean_msg == p for p in ('que tienes', 'que polleras tienes', 'que modelos tienes', 'cuales tienes', 'que hay', 'que ofrecen', 'que tipo de polleras tienes')) or (any(w in clean_msg for w in ('que', 'cuales')) and any(w in clean_msg for w in ('tienes', 'hay', 'ofreces', 'muestras')) and not any(c in clean_msg for c in ('roja', 'rojo', 'morada', 'morado', 'azul', 'verde', 'negra', 'blanca', 'amarilla', 'fucsia', 'rosada')))
     if is_general_inquiry:
-        return await spoken_response(personality.general_inquiry(products), action='answer', pollera=None, context=sess_ctx.model_dump())
+        speech = personality.general_inquiry(products, sess_ctx)
+        _record_history(sess_ctx, chat_msg.message, speech.text)
+        return await spoken_response(speech, action='answer', pollera=None, context=sess_ctx.model_dump())
 
-    # 4. Search for specific product requested by client
+    # 5. Price comments ("está barata" / "está cara")
+    if any(k in clean_msg for k in ('barat', 'economi', 'ganga', 'caro', 'cara', 'costos')) and not any(k in clean_msg for k in ('precio', 'cuanto', 'cuesta', 'soles', 'pollera', 'modelo', 'codigo')):
+        comment_type = 'barata' if any(k in clean_msg for k in ('barat', 'economi', 'ganga')) else 'cara'
+        speech = personality.price_comment_response(comment_type, None, sess_ctx)
+        _record_history(sess_ctx, chat_msg.message, speech.text)
+        return await spoken_response(speech, action='answer', pollera=None, context=sess_ctx.model_dump())
+
+    # 6. Casual chit-chat (jokes, weather, compliments)
+    if any(k in clean_msg for k in ('chiste', 'broma', 'gracios', 'linda', 'guapa', 'bonita', 'frio', 'calor', 'clima', 'como te llamas', 'quien eres')):
+        speech = personality.casual_chit_chat(chat_msg.message, sess_ctx)
+        _record_history(sess_ctx, chat_msg.message, speech.text)
+        return await spoken_response(speech, action='answer', pollera=None, context=sess_ctx.model_dump())
+
+    # 7. Celebration motive advice ("busco para navidad", "para un cumpleanos", etc.)
+    if any(k in clean_msg for k in ('navidad', 'cumplean', 'boda', 'matrimoni', 'patronal', 'candelaria', 'carnaval')) and not any(k in clean_msg for k in ('muestrame', 'ensename', 'codigo', 'recomiendame')):
+        speech = personality.celebration_advice(sess_ctx.celebration_reason, products, sess_ctx)
+        _record_history(sess_ctx, chat_msg.message, speech.text)
+        return await spoken_response(speech, action='answer', pollera=None, context=sess_ctx.model_dump())
+
+    # 8. Search for specific product requested by client (code, color, size, description, or recommendation)
     product = await assistant.select_product(chat_msg.message, products, chat_msg.codigo_actual, context=sess_ctx)
     if product:
         sess_ctx.current_code = product.codigo
@@ -258,11 +307,42 @@ async def chat_with_ai(context=Depends(load_chat_context)):
             sess_ctx.current_code = target.codigo
             if target.codigo not in sess_ctx.viewed_codes:
                 sess_ctx.viewed_codes.append(target.codigo)
+            _record_history(sess_ctx, chat_msg.message, speech.text)
             return await spoken_response(speech, action='show_pollera', pollera=target, context=sess_ctx.model_dump())
-        speech = personality.presentation(product)
+        speech = personality.presentation(product, context=sess_ctx)
+        _record_history(sess_ctx, chat_msg.message, speech.text)
         return await spoken_response(speech, action='show_pollera', pollera=product, context=sess_ctx.model_dump())
 
-    speech = personality.not_found() if products else personality.empty_catalog()
+    # 9. If query was code-like and not found (e.g. 'ZZ999'), return not_found without querying Ollama
+    is_code_like = bool(re.fullmatch(r'[a-z0-9_-]+', clean_msg) and any(c.isdigit() for c in clean_msg))
+    if is_code_like:
+        speech = personality.not_found(sess_ctx) if products else personality.empty_catalog()
+        _record_history(sess_ctx, chat_msg.message, speech.text)
+        return await spoken_response(speech, action='none', pollera=None, context=sess_ctx.model_dump())
+
+    # 10. For open conversational turns, try Ollama conversational response
+    ollama_reply = await assistant.generate_conversational_response(
+        message=chat_msg.message,
+        products=products,
+        current_product=None,
+        context=sess_ctx
+    )
+    if ollama_reply and getattr(ollama_reply, 'texto', None):
+        if getattr(ollama_reply, 'codigo_mostrar', None):
+            target = next((p for p in products if p.codigo.upper() == ollama_reply.codigo_mostrar.upper()), None)
+            if target:
+                sess_ctx.current_code = target.codigo
+                if target.codigo not in sess_ctx.viewed_codes:
+                    sess_ctx.viewed_codes.append(target.codigo)
+                speech = personality.Speech().add(ollama_reply.emocion or 'alegre', ollama_reply.texto)
+                _record_history(sess_ctx, chat_msg.message, speech.text)
+                return await spoken_response(speech, action='show_pollera', pollera=target, context=sess_ctx.model_dump())
+        speech = personality.Speech().add(ollama_reply.emocion or 'alegre', ollama_reply.texto)
+        _record_history(sess_ctx, chat_msg.message, speech.text)
+        return await spoken_response(speech, action='answer', pollera=None, context=sess_ctx.model_dump())
+
+    speech = personality.not_found(sess_ctx) if products else personality.empty_catalog()
+    _record_history(sess_ctx, chat_msg.message, speech.text)
     return await spoken_response(speech, action='none', pollera=None, context=sess_ctx.model_dump())
 
 
@@ -274,6 +354,7 @@ async def conversacion_product(msg: schemas.ConversationMessage, db: Session = D
     product_schema = schemas.Pollera.model_validate(product)
     sess_ctx = msg.context or schemas.ConversationContext(current_code=product.codigo)
     reply = await conversation.respond(msg.message, product_schema, others, context=sess_ctx)
+    _record_history(sess_ctx, msg.message, reply.speech.text)
     extra = {'action': reply.action, 'context': (reply.context.model_dump() if hasattr(reply.context, 'model_dump') else sess_ctx.model_dump())}
     if reply.product:
         extra['pollera'] = reply.product

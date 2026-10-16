@@ -751,3 +751,114 @@ class AutonomiaV1Tests(ApiTests):
         self.assertEqual(d_gen['action'], 'answer')
         self.assertIsNone(d_gen.get('pollera'))
         self.assertIn('polleras', d_gen['text'].lower())
+
+    def test_personality_vocative_rotation_avoids_repetition(self):
+        ctx = schemas.ConversationContext()
+        vocatives_seen = []
+        for _ in range(25):
+            voc = personality.get_vocative(ctx)
+            vocatives_seen.append(voc)
+
+        # Ensure empty vocative is supported (no appellative in every turn)
+        self.assertIn('', vocatives_seen)
+        # Ensure variety of vocatives
+        non_empty = [v for v in vocatives_seen if v]
+        self.assertGreaterEqual(len(set(non_empty)), 3)
+        # Ensure consecutive vocatives are never identical when non-empty
+        for i in range(len(non_empty) - 1):
+            self.assertNotEqual(non_empty[i], non_empty[i + 1])
+
+    def test_celebration_advice_navidad_and_cumpleanos(self):
+        # Navidad advice
+        r_nav = self.client.post('/api/chat', json={'message': 'Busco una pollera para Navidad'})
+        self.assertEqual(r_nav.status_code, 200)
+        d_nav = r_nav.json()
+        self.assertEqual(d_nav['action'], 'answer')
+        self.assertIsNone(d_nav.get('pollera'))
+        self.assertIn('navidad', d_nav['text'].lower())
+        self.assertEqual(d_nav['context']['celebration_reason'], 'Navidad')
+
+        # Cumpleaños advice
+        r_cum = self.client.post('/api/chat', json={'message': 'Quiero una para un cumpleaños'})
+        self.assertEqual(r_cum.status_code, 200)
+        d_cum = r_cum.json()
+        self.assertEqual(d_cum['action'], 'answer')
+        self.assertIsNone(d_cum.get('pollera'))
+        self.assertIn('especial', d_cum['text'].lower())
+        self.assertEqual(d_cum['context']['celebration_reason'], 'cumpleaños')
+
+    def test_price_comments_humor_and_empathy(self):
+        # Está barata -> witty response
+        r_barata = self.client.post('/api/chat', json={'message': 'Está muy barata'})
+        self.assertEqual(r_barata.status_code, 200)
+        d_barata = r_barata.json()
+        self.assertEqual(d_barata['action'], 'answer')
+        self.assertIn('todavía no te he mostrado', d_barata['text'].lower())
+        self.assertEqual(d_barata['context']['presupuesto'], 'económico')
+
+        # Está cara -> empathetic response
+        r_cara = self.client.post('/api/chat', json={'message': 'Está muy cara'})
+        self.assertEqual(r_cara.status_code, 200)
+        d_cara = r_cara.json()
+        self.assertEqual(d_cara['action'], 'answer')
+        self.assertIn('presupuesto', d_cara['text'].lower())
+        self.assertEqual(d_cara['context']['presupuesto'], 'ajustado')
+
+    def test_casual_chit_chat_and_jokes(self):
+        # Joke inquiry
+        r_joke = self.client.post('/api/chat', json={'message': 'Cuéntame un chiste'})
+        self.assertEqual(r_joke.status_code, 200)
+        d_joke = r_joke.json()
+        self.assertEqual(d_joke['action'], 'answer')
+        self.assertIsNone(d_joke.get('pollera'))
+        self.assertIn('pollera', d_joke['text'].lower())
+
+        # Weather / friendly comment
+        r_cold = self.client.post('/api/chat', json={'message': 'Qué frío hace hoy'})
+        self.assertEqual(r_cold.status_code, 200)
+        d_cold = r_cold.json()
+        self.assertEqual(d_cold['action'], 'answer')
+        self.assertIn('zapateando', d_cold['text'].lower())
+
+    def test_multi_turn_coherence_with_celebration_and_memory(self):
+        # Turn 1: Customer asks about wedding occasion
+        r1 = self.client.post('/api/chat', json={'message': 'Busco algo para una boda'})
+        self.assertEqual(r1.status_code, 200)
+        ctx1 = r1.json()['context']
+        self.assertEqual(ctx1['celebration_reason'], 'boda')
+
+        # Turn 2: Customer asks to see pollera 34TM
+        r2 = self.client.post('/api/chat', json={'message': '34TM', 'context': ctx1})
+        self.assertEqual(r2.status_code, 200)
+        d2 = r2.json()
+        self.assertEqual(d2['action'], 'show_pollera')
+        self.assertEqual(d2['pollera']['codigo'], '34TM')
+        ctx2 = d2['context']
+        self.assertEqual(ctx2['current_code'], '34TM')
+        self.assertEqual(ctx2['celebration_reason'], 'boda')
+
+        # Turn 3: Customer asks what is included in this pollera
+        r3 = self.client.post('/api/conversacion', json={
+            'codigo': '34TM',
+            'message': '¿qué incluye?',
+            'context': ctx2
+        })
+        self.assertEqual(r3.status_code, 200)
+        d3 = r3.json()
+        self.assertIn('sombrero', d3['text'].lower())
+        ctx3 = d3['context']
+        self.assertEqual(ctx3['celebration_reason'], 'boda')
+
+        # Turn 4: Customer comments that it is cheap
+        r4 = self.client.post('/api/conversacion', json={
+            'codigo': '34TM',
+            'message': 'está barata',
+            'context': ctx3
+        })
+        self.assertEqual(r4.status_code, 200)
+        d4 = r4.json()
+        self.assertIn('todavía no te he mostrado', d4['text'].lower())
+        ctx4 = d4['context']
+        self.assertEqual(ctx4['celebration_reason'], 'boda')
+        self.assertEqual(ctx4['presupuesto'], 'económico')
+

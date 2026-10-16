@@ -24,7 +24,7 @@ def product_speech(product, short=False, educate=False):
     return speech.text
 
 
-async def query_ollama(prompt, schema=schemas.ProductSelection):
+async def query_ollama(prompt, schema=schemas.ProductSelection, num_predict=80, temperature=0.0):
     try:
         await asyncio.wait_for(_generation_slots.acquire(), timeout=0.1)
     except TimeoutError:
@@ -37,7 +37,7 @@ async def query_ollama(prompt, schema=schemas.ProductSelection):
                 'stream': False,
                 'format': 'json',
                 'keep_alive': '5m',
-                'options': {'num_predict': 80, 'temperature': 0},
+                'options': {'num_predict': num_predict, 'temperature': temperature},
             }), timeout=config.OLLAMA_TIMEOUT)
             response.raise_for_status()
             return schema.model_validate_json(response.json()['response'])
@@ -46,6 +46,89 @@ async def query_ollama(prompt, schema=schemas.ProductSelection):
         return None
     finally:
         _generation_slots.release()
+
+
+async def generate_conversational_response(
+    message: str,
+    products: list,
+    current_product=None,
+    context: schemas.ConversationContext = None,
+) -> schemas.ConversationalReply | None:
+    """Generates natural, witty and contextual responses using Ollama while adhering strictly to catalogue facts."""
+    if not products:
+        return None
+
+    available = [p for p in products if getattr(p, 'estado', 'DISPONIBLE') == 'DISPONIBLE'][:12]
+    catalog_items = [
+        {
+            'codigo': p.codigo,
+            'nombre': p.nombre,
+            'talla': p.talla,
+            'precio_alquiler': float(p.precio_final),
+            'descripcion': p.descripcion,
+            'incluye_sombrero': p.incluye_sombrero,
+            'incluye_manta': p.incluye_manta
+        }
+        for p in available
+    ]
+
+    curr_str = 'Ninguno (pantalla de bienvenida con rostro)'
+    if current_product:
+        curr_str = (
+            f"Código: {current_product.codigo}, Nombre: {current_product.nombre}, "
+            f"Talla: {current_product.talla}, Precio alquiler: S/ {float(current_product.precio_final):.2f}, "
+            f"Estado: {getattr(current_product, 'estado', 'DISPONIBLE')}"
+        )
+
+    history_entries = getattr(context, 'chat_history', []) if context else []
+    recent_history = history_entries[-4:] if history_entries else []
+    history_str = '\n'.join([f"- {h.get('role', 'cliente').capitalize()}: {h.get('text', '')}" for h in recent_history]) or 'Sin historial previo.'
+
+    motive = getattr(context, 'celebration_reason', None) or 'No especificado aún'
+    budget = getattr(context, 'presupuesto', None) or 'No especificado'
+    recent_vocatives = getattr(context, 'used_vocatives', [])[-3:] if context else []
+
+    prompt = (
+        'Eres Sonia, asesora y vendedora experta en alquiler de polleras tradicionales en Puno, Perú.\n'
+        'Personalidad: Eres inteligente, cálida, alegre, espontánea y persuasiva, con un toque de humor simpático y ligero. Sabes escuchar antes de recomendar.\n\n'
+        f'CONTEXTO DE LA SESIÓN:\n'
+        f'- Producto en pantalla: {curr_str}\n'
+        f'- Motivo de celebración: {motive}\n'
+        f'- Presupuesto cliente: {budget}\n'
+        f'- Últimos apelativos usados (EVITA REPETIRLOS SEGUIDO): {recent_vocatives}\n'
+        f'- Historial reciente:\n{history_str}\n\n'
+        f'CATÁLOGO REAL DISPONIBLE:\n{json.dumps(catalog_items, ensure_ascii=False)}\n\n'
+        f'MENSAJE DEL CLIENTE: "{message}"\n\n'
+        'INSTRUCCIONES CLAVE:\n'
+        '1. NO repitas "caserita" en cada respuesta. Alterna con naturalidad ("joven", "señorita", "amiga", o habla directo sin apelativo).\n'
+        '2. Si el cliente menciona una celebración (Navidad, cumpleaños, boda, fiesta patronal), haz comentarios simpáticos y sugerencias que armonicen con la ocasión.\n'
+        '3. Si el cliente hace una broma o comentario casual ("está barata", "hace frío", etc.), responde con humor y amabilidad primero.\n'
+        '4. NUNCA inventes productos, precios ni descuentos que no existan en el catálogo.\n'
+        '5. Si el cliente pide ver un modelo o color específico del catálogo, pon su código en "codigo_mostrar". Si solo conversa o pregunta de la pollera actual, pon null en "codigo_mostrar".\n'
+        '6. Longitud: 2 a 3 oraciones fluidas y naturales (20 a 45 palabras) para voz hablada.\n'
+        'Devuelve estrictamente JSON conforme al esquema.'
+    )
+
+    reply = await query_ollama(
+        prompt,
+        schema=schemas.ConversationalReply,
+        num_predict=180,
+        temperature=0.6
+    )
+
+    if reply and getattr(reply, 'texto', None):
+        if context:
+            if getattr(reply, 'motivo_detectado', None):
+                context.celebration_reason = reply.motivo_detectado
+            if getattr(reply, 'presupuesto_detectado', None):
+                context.presupuesto = reply.presupuesto_detectado
+            if getattr(reply, 'color_preferido', None):
+                context.last_color = reply.color_preferido
+            if getattr(reply, 'talla_preferida', None):
+                context.last_talla = reply.talla_preferida
+        return reply
+
+    return None
 
 
 async def select_product(message, products, current_code=None, context=None):

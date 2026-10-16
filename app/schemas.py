@@ -75,9 +75,24 @@ class ConversationContext(BaseModel):
     current_code: str | None = None
     last_color: str | None = None
     last_talla: str | None = None
+    celebration_reason: str | None = None
+    presupuesto: str | None = None
     viewed_codes: list[str] = Field(default_factory=list)
     last_intent: str | None = None
     last_robot_question: str | None = None
+    used_vocatives: list[str] = Field(default_factory=list)
+    chat_history: list[dict[str, str]] = Field(default_factory=list)
+
+
+class ConversationalReply(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    texto: str = Field(description="Respuesta hablada natural, cálida y sin repeticiones")
+    emocion: str = Field(default='alegre', description="Emoción de prosodia")
+    codigo_mostrar: str | None = Field(default=None, description="Código de pollera a mostrar o null")
+    motivo_detectado: str | None = Field(default=None, description="Motivo de celebración detectado o null")
+    presupuesto_detectado: str | None = Field(default=None, description="Percepción de precio o presupuesto o null")
+    color_preferido: str | None = Field(default=None, description="Color preferido mencionado o null")
+    talla_preferida: str | None = Field(default=None, description="Talla preferida mencionada o null")
 
 
 class ChatMessage(BaseModel):
