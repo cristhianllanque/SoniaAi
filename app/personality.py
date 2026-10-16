@@ -102,15 +102,13 @@ def presentation(product, opener=None, invite=True, context=None):
 
     if opener:
         first = opener
-    elif reason and 'navidad' in str(reason).lower():
+    elif reason:
+        clean_r = str(reason).strip()
         first = random.choice([
-            f'¡Para Navidad este modelo queda pintado{voc_suffix}!',
-            f'¡Mira qué belleza navideña{voc_suffix}!',
-        ])
-    elif reason and 'cumplean' in str(reason).lower():
-        first = random.choice([
-            f'¡Ideal para lucirte en ese cumpleaños{voc_suffix}!',
-            f'¡Para festejar como se debe{voc_suffix}, mira esta!',
+            f'¡Ah no, para esa ocasión de {clean_r} en la que tú me dijiste te podría dar esta pollera {product.nombre}!',
+            f'¡Para esa ocasión de {clean_r} que me comentaste, mira qué belleza{voc_suffix}!',
+            f'¡Justo para tu {clean_r}{voc_suffix}, esta pollera {product.nombre} te va a quedar hermosa!',
+            f'¡Para lucirte en tu fiesta de {clean_r}{voc_suffix}, fíjate en esta opción!',
         ])
     else:
         first = random.choice([
@@ -140,22 +138,31 @@ def presentation(product, opener=None, invite=True, context=None):
     return speech
 
 
-def offer(product, educate=True):
-    """Short attraction pitch for a detected passer-by; teaches how to use the mic."""
+def offer(product, educate=True, context=None):
+    """Lively attraction pitch offering a pollera with teaser in hand, asking for occasion, color, or code."""
     speech = Speech()
+    voc = get_vocative(context)
+    voc_prefix = f'¡Hola, {voc}! ' if voc else '¡Hola! '
+    voc_suffix = f', {voc}' if voc else ', caserita'
     price = money(product.precio_final)
-    speech.add('entusiasmada', random.choice([
-        '¡Hola! ¿Buscas pollera para tu fiesta?', '¡Pase adelante!', '¡Mira qué linda pollera tenemos!',
-    ]))
-    speech.add('alegre', f'Conoce {product.nombre}, en talla {product.talla}, a {price} soles por alquiler.')
-    if educate:
-        speech.add('amable', random.choice([
-            'Si quieres ver más polleras, mantén presionado el botón del micrófono y dime qué buscas.',
-            'Aprieta el botón del micrófono sin soltarlo, dime el código o el color que buscas, y suéltalo.',
-            'Para preguntarme, mantén presionado el micrófono mientras hablas. ¡Así de fácil!',
-        ]))
-    else:
-        speech.add('amable', 'Acércate y consulta los detalles.')
+
+    intros = [
+        f'{voc_prefix}¡Pase adelante! Mire, tengo por ejemplo esta hermosa pollera {product.nombre} en talla {product.talla} a {price} soles.',
+        f'¡Pase, pase{voc_suffix}! Tenemos polleras preciosas para alquiler. Mire esta {product.nombre}, viene completita.',
+        f'{voc_prefix}¡Mire qué bonita opción tenemos por aquí! Le ofrezco {product.nombre} a {price} soles por alquiler.',
+        f'¡Bienvenida{voc_suffix}! Si busca pollera para su evento, mire por ejemplo este modelo {product.nombre} en talla {product.talla}.',
+        f'{voc_prefix}¡Qué alegría saludarla! Tenemos trajes de fiesta hermosos, como este {product.nombre} que ve aquí.',
+    ]
+
+    invitations = [
+        '¿Para qué ocasión o fiesta está buscando? También puede dictarme el color o código que desea y se lo muestro.',
+        'Cuénteme para qué fiesta la necesita, o dígame qué color o código prefiere. ¡Dígame nomás, le escucho!',
+        '¿Qué modelo o color tiene en mente para su celebración? O si tiene un código en especial, dígamelo, le escucho.',
+        '¿Para qué fecha o festividad es su traje? Puede decirme el color que busca o dictarme el código, con confianza.',
+    ]
+
+    speech.add('entusiasmada', random.choice(intros))
+    speech.add('curiosa', random.choice(invitations))
     return speech
 
 
@@ -176,10 +183,9 @@ def autonomous_greeting(context=None):
     """Warm autonomous greeting when camera detects interest."""
     speech = Speech()
     options = [
-        ('¡Hola, caserita! Tenemos unas polleras muy bonitas para tus fiestas.', '¿Buscas algún color o código en especial? Te escucho.'),
-        ('¡Hola, casera! Qué gusto saludarte, bienvenida a nuestra tienda.', '¿Qué modelo o color de pollera estás buscando hoy? Dime nomás.'),
-        ('¡Pase adelante, caserita! Tenemos modelos preciosos para alquiler.', 'Dime qué color o código necesitas y te lo muestro con gusto.'),
-        ('¡Hola, caserita! Qué alegría verte por aquí.', 'Cuéntame qué fiesta tienes en mente y te enseño las mejores opciones.')
+        ('¡Hola, caserita! Pase adelante, tenemos polleras preciosas para sus fiestas.', '¿Para qué fiesta o qué color o código de pollera desea dictarme? Le escucho.'),
+        ('¡Hola, casera! Qué gusto saludarla, bienvenida a nuestra tienda.', 'Cuénteme para qué ocasión busca o qué color o código le gustaría ver, dígame nomás.'),
+        ('¡Pase adelante, caserita! Tenemos trajes hermosos para todo evento.', '¿Para qué fiesta necesita su pollera, o qué color o código prefiere? Con confianza, le escucho.')
     ]
     g1, g2 = random.choice(options)
     speech.add('entusiasmada', g1)
@@ -215,24 +221,33 @@ def general_inquiry(products=None, context=None):
 
 
 def celebration_advice(motive: str, products=None, context=None):
-    """Contextual styling advice for specific occasions (Christmas, birthdays, weddings, patronal festivals)."""
+    """Contextual styling advice for specific occasions (Christmas, birthdays, Halloween, weddings, patronal festivals)."""
     speech = Speech()
     voc = get_vocative(context)
     voc_suffix = f', {voc}' if voc else ''
     m = (motive or '').lower()
-    if 'navidad' in m:
-        speech.add('entusiasmada', f'¡Qué bonita ocasión{voc_suffix}!')
+    if 'halloween' in m:
+        speech.add('entusiasmada', f'¡Para Halloween o fiesta temática queda sensacional{voc_suffix}!')
+        speech.add('alegre', 'Para esa ocasión te recomendaría una pollera en tonos oscuros o contrastes llamativos, como negro, morado o naranja con bordado brillante.')
+        speech.add('curiosa', '¿Te gustaría ver un modelo en esos tonos, o prefieres decirme qué color tienes en mente?')
+    elif 'navidad' in m:
+        speech.add('entusiasmada', f'¡Qué hermosa ocasión{voc_suffix}!')
         speech.add('alegre', 'Si te gustan los colores clásicos de Navidad, podemos buscar una roja. Aunque una verde también quedaría preciosa.')
         speech.add('curiosa', '¿Cuál prefieres?')
-    elif 'cumplean' in m:
-        speech.add('entusiasmada', f'¡Entonces hay que buscar algo especial{voc_suffix}!')
+    elif 'cumplean' in m or 'cumple' in m:
+        speech.add('entusiasmada', f'¡Para un cumpleaños hay que lucirse con algo especial{voc_suffix}!')
+        speech.add('alegre', 'Para esa ocasión que me comentas, si es de día los tonos vivos como fucsia o turquesa quedan preciosos, y si es de noche un azul o morado elegante.')
         speech.add('curiosa', '¿Es una fiesta elegante o más tradicional? Así te recomiendo un modelo que vaya con la ocasión.')
-    elif any(k in m for k in ('boda', 'matrimonio')):
+    elif any(k in m for k in ('boda', 'matrimonio', 'casamiento')):
         speech.add('alegre', f'¡Qué linda celebración{voc_suffix}!')
         speech.add('curiosa', 'Para una boda lucen preciosos los tonos palo rosa, crema o un azul distinguido con mantita fina. ¿Qué tono te gustaría lucir?')
-    elif any(k in m for k in ('patronal', 'morenada', 'diablada', 'caporal', 'candelaria', 'carnaval')):
+    elif any(k in m for k in ('patronal', 'morenada', 'diablada', 'caporal', 'candelaria', 'carnaval', 'tinkus', 'parada', 'concurso')):
         speech.add('entusiasmada', f'¡Para esa fiesta hay que lucirse con todo el brillo{voc_suffix}!')
         speech.add('curiosa', 'Tenemos trajes con bordados muy finos que destacan al bailar. ¿Qué color tienes en mente?')
+    elif any(k in m for k in ('graduacion', 'promocion')):
+        speech.add('entusiasmada', f'¡Qué gran logro, felicidades{voc_suffix}!')
+        speech.add('alegre', 'Para una fiesta de graduación o promoción lucen muy elegantes los trajes en azul noche, vino o dorado con bordado fino.')
+        speech.add('curiosa', '¿Qué color te gustaría lucir para tu festejo?')
     else:
         speech.add('alegre', f'¡Qué buen motivo para festejar{voc_suffix}!')
         speech.add('curiosa', f'Para esa ocasión tenemos opciones preciosas. ¿Buscas algún color o estilo en especial?')

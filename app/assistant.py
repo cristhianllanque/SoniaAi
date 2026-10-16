@@ -48,6 +48,60 @@ async def query_ollama(prompt, schema=schemas.ProductSelection, num_predict=80, 
         _generation_slots.release()
 
 
+def extract_celebration_reason(text: str) -> str | None:
+    norm = normalize(text).lower()
+    if 'halloween' in norm or 'bruja' in norm:
+        return 'Halloween'
+    if 'navidad' in norm or 'nochebuena' in norm:
+        return 'Navidad'
+    if 'cumplean' in norm or 'cumple' in norm:
+        return 'cumpleaños'
+    if any(k in norm for k in ('boda', 'matrimoni', 'casamiento')):
+        return 'boda'
+    if any(k in norm for k in ('graduacion', 'promocion')):
+        return 'graduación'
+    if any(k in norm for k in ('bautizo', 'comunion', 'confirmacion')):
+        return 'bautizo'
+    if any(k in norm for k in ('aniversario',)):
+        return 'aniversario'
+    if any(k in norm for k in ('candelaria', 'morenada', 'diablada', 'caporal', 'tinkus', 'patronal', 'carnaval', 'parada', 'concurso')):
+        return 'fiesta patronal'
+    if any(k in norm for k in ('fiesta', 'evento', 'agasajo', 'celebracion')):
+        return 'fiesta'
+    return None
+
+
+def select_pollera_for_occasion(reason: str, products: list, context=None):
+    if not products:
+        return None
+    available = [p for p in products if getattr(p, 'estado', 'DISPONIBLE') == 'DISPONIBLE']
+    pool = available if available else products
+    viewed = set(getattr(context, 'viewed_codes', []) or [])
+    curr = getattr(context, 'current_code', None)
+    candidates = [p for p in pool if p.codigo not in viewed and p.codigo != curr] or pool
+
+    r = (reason or '').lower()
+    if 'halloween' in r:
+        preferred_colors = ('negro', 'negra', 'morad', 'oscuro', 'azul', 'naranja')
+    elif 'navidad' in r:
+        preferred_colors = ('roj', 'verd')
+    elif 'boda' in r or 'matrimoni' in r:
+        preferred_colors = ('rosa', 'blanc', 'azul', 'dorad', 'crema')
+    elif 'graduacion' in r or 'promocion' in r:
+        preferred_colors = ('azul', 'vino', 'dorad', 'morad')
+    else:
+        preferred_colors = ('fucsia', 'roj', 'azul', 'morad', 'turquesa', 'verd')
+
+    for col in preferred_colors:
+        for p in candidates:
+            p_text = f'{p.nombre} {p.descripcion}'.lower()
+            if col in p_text:
+                return p
+
+    return candidates[0] if candidates else None
+
+
+
 async def generate_conversational_response(
     message: str,
     products: list,
@@ -101,11 +155,12 @@ async def generate_conversational_response(
         f'MENSAJE DEL CLIENTE: "{message}"\n\n'
         'INSTRUCCIONES CLAVE:\n'
         '1. NO repitas "caserita" en cada respuesta. Alterna con naturalidad ("joven", "señorita", "amiga", o habla directo sin apelativo).\n'
-        '2. Si el cliente menciona una celebración (Navidad, cumpleaños, boda, fiesta patronal), haz comentarios simpáticos y sugerencias que armonicen con la ocasión.\n'
-        '3. Si el cliente hace una broma o comentario casual ("está barata", "hace frío", etc.), responde con humor y amabilidad primero.\n'
-        '4. NUNCA inventes productos, precios ni descuentos que no existan en el catálogo.\n'
-        '5. Si el cliente pide ver un modelo o color específico del catálogo, pon su código en "codigo_mostrar". Si solo conversa o pregunta de la pollera actual, pon null en "codigo_mostrar".\n'
-        '6. Longitud: 2 a 3 oraciones fluidas y naturales (20 a 45 palabras) para voz hablada.\n'
+        '2. SEGUIMIENTO DE CONVERSACIÓN: Si el cliente mencionó un motivo o fiesta (cumpleaños, Halloween, boda, fiesta patronal, etc.), haz referencia a ello con naturalidad (ejemplo: "Para esa fiesta que me comentaste...", "Para ese cumpleaños te quedaría genial esta pollera..."). Mantén la secuencia de lo conversado.\n'
+        '3. OFRECE LAS POLLERAS: Ofrece activamente modelos del catálogo disponible que armonicen con su evento, explicando por qué encajan bien.\n'
+        '4. Si el cliente hace una broma o comentario casual ("está barata", "hace frío", etc.), responde con humor y amabilidad primero.\n'
+        '5. NUNCA inventes productos, precios ni descuentos que no existan en el catálogo.\n'
+        '6. Si el cliente pide ver o recomiendas un modelo del catálogo, pon su código en "codigo_mostrar". Si solo conversa, pon null en "codigo_mostrar".\n'
+        '7. Longitud: 2 a 3 oraciones fluidas y naturales (20 a 45 palabras) para voz hablada.\n'
         'Devuelve estrictamente JSON conforme al esquema.'
     )
 

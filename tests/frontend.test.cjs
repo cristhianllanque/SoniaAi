@@ -365,3 +365,51 @@ test('general inquiry or greeting does not open productView, specific query does
     assert.equal(h.element('productView').classList.contains('hidden'), false);
 });
 
+test('autonomous offer presents teaser cartelito in hand on hero view and stays visible after audio', async () => {
+    const h = harness();
+    h.run('detectionEnabled=true; phase="idle";');
+    h.context.api.request = async (url, options) => {
+        h.calls.push({url, options});
+        if (url === '/api/check_interest') return {state: 'running', interested: true};
+        if (url === '/api/audio/ofertas') return {
+            text: '¡Mire qué bonita opción tenemos por aquí!',
+            action: 'offer',
+            audio_url: null,
+            imagen_url: '/static/uploads/pollera1.jpg',
+            pollera_teaser: {codigo: 'OFERTA1', nombre: 'Pollera Festiva', talla: 'M', precio_final: 85}
+        };
+        return {};
+    };
+    await h.run('pollInterest()');
+    assert.equal(h.run('currentProduct'), null);
+    assert.equal(h.element('heroView').classList.contains('hidden'), false);
+    assert.equal(h.element('productView').classList.contains('hidden'), true);
+    assert.equal(h.element('robotWrapper').classList.contains('presenting'), true);
+    assert.equal(h.element('teaserImage').src, '/static/uploads/pollera1.jpg');
+
+    // After audio stops, cartelito in hand MUST NOT drop
+    h.run('stopAudio()');
+    assert.equal(h.element('robotWrapper').classList.contains('presenting'), true);
+});
+
+test('silence in product view does not kick customer out to hero view', async () => {
+    const h = harness();
+    // Open product view
+    await h.run("mostrarResultado({codigo: 'P100', nombre: 'Pollera Azul', talla: 'M', precio_final: 90, precio_base: 90})");
+    assert.equal(h.run('currentProduct.codigo'), 'P100');
+    assert.equal(h.element('productView').classList.contains('hidden'), false);
+
+    // Simulate auto listen silence where reminder was already given
+    h.run('reminderGivenInTurn = true; autoListening = true; isSpeakingDetected = false; phase = "listening";');
+    // Invoke speechWaitTimer logic
+    h.run(`
+        stopAutoListen();
+        setPhase('idle');
+    `);
+    // Customer MUST remain in product view
+    assert.equal(h.run('currentProduct.codigo'), 'P100');
+    assert.equal(h.element('productView').classList.contains('hidden'), false);
+    assert.equal(h.element('heroView').classList.contains('hidden'), true);
+});
+
+

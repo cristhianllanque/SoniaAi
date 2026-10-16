@@ -202,7 +202,13 @@ async def generate_ofertas_audio(products=Depends(load_catalog)):
         return await spoken_response(personality.empty_catalog(), imagen_url=None)
     product = random.choice(available)
     speech = personality.offer(product, educate=True)
-    return await spoken_response(speech, imagen_url=product.imagen_url)
+    return await spoken_response(
+        speech,
+        imagen_url=product.imagen_url,
+        action='offer',
+        pollera=None,
+        pollera_teaser=product.model_dump() if hasattr(product, 'model_dump') else None
+    )
 
 
 @app.get('/api/audio/saludo', dependencies=[Depends(limit_speech)])
@@ -249,14 +255,9 @@ async def chat_with_ai(context=Depends(load_chat_context)):
         return await spoken_response(speech, action='farewell', pollera=None, context=sess_ctx.model_dump())
 
     # 2. Extract celebration motives and budget perception
-    if 'navidad' in clean_msg:
-        sess_ctx.celebration_reason = 'Navidad'
-    elif 'cumplean' in clean_msg:
-        sess_ctx.celebration_reason = 'cumpleaños'
-    elif any(k in clean_msg for k in ('boda', 'matrimoni')):
-        sess_ctx.celebration_reason = 'boda'
-    elif any(k in clean_msg for k in ('patronal', 'morenada', 'diablada', 'caporal', 'candelaria', 'carnaval')):
-        sess_ctx.celebration_reason = 'fiesta patronal'
+    reason = assistant.extract_celebration_reason(clean_msg)
+    if reason:
+        sess_ctx.celebration_reason = reason
 
     if any(k in clean_msg for k in ('barat', 'economi', 'ganga', 'regalo')):
         sess_ctx.presupuesto = 'económico'
@@ -289,14 +290,16 @@ async def chat_with_ai(context=Depends(load_chat_context)):
         _record_history(sess_ctx, chat_msg.message, speech.text)
         return await spoken_response(speech, action='answer', pollera=None, context=sess_ctx.model_dump())
 
-    # 7. Celebration motive advice ("busco para navidad", "para un cumpleanos", etc.)
-    if any(k in clean_msg for k in ('navidad', 'cumplean', 'boda', 'matrimoni', 'patronal', 'candelaria', 'carnaval')) and not any(k in clean_msg for k in ('muestrame', 'ensename', 'codigo', 'recomiendame')):
+    # 7. Celebration motive advice ("busco para navidad", "para un cumpleanos", "para halloween", etc.)
+    if reason and not any(k in clean_msg for k in ('muestrame', 'ensename', 'dame', 'recomiendame', 'lo queria', 'queria para', 'tienes esta', 'codigo', 'precio', 'cuanto cuesta')):
         speech = personality.celebration_advice(sess_ctx.celebration_reason, products, sess_ctx)
         _record_history(sess_ctx, chat_msg.message, speech.text)
         return await spoken_response(speech, action='answer', pollera=None, context=sess_ctx.model_dump())
 
-    # 8. Search for specific product requested by client (code, color, size, description, or recommendation)
+    # 8. Search for specific product requested by client (code, color, size, description, occasion follow-up, or recommendation)
     product = await assistant.select_product(chat_msg.message, products, chat_msg.codigo_actual, context=sess_ctx)
+    if not product and reason and not any(k in clean_msg for k in ('codigo', 'precio', 'cuanto cuesta', 'descuento')):
+        product = assistant.select_pollera_for_occasion(reason, products, sess_ctx)
     if product:
         sess_ctx.current_code = product.codigo
         if product.codigo not in sess_ctx.viewed_codes:

@@ -11,6 +11,7 @@ let detectionEnabled = false;
 let inactivityTimer = null;
 let audioTimer = null;
 let currentProduct = null;
+let currentTeaserProduct = null;
 let whatsappNumber = '';
 let currentMood = 'amable';
 
@@ -205,7 +206,6 @@ function stopAudio() {
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
-    el('robotWrapper').classList.remove('presenting');
 }
 
 const thinkingClips = [
@@ -326,12 +326,18 @@ async function applySpeech(data, ticket) {
             sessionContext.viewed_codes.push(data.pollera.codigo);
         }
     }
-    if (data.action === 'greeting') {
+    if (data.action === 'greeting' && !data.imagen_url) {
         el('robotWrapper').classList.remove('presenting');
-    } else if (data.imagen_url && !currentProduct && data.action === 'show_pollera') {
+    } else if (data.imagen_url && !currentProduct) {
         api.setImage(el('teaserImage'), data.imagen_url);
         el('robotWrapper').classList.add('presenting');
+        if (data.pollera_teaser) {
+            currentTeaserProduct = data.pollera_teaser;
+        }
+    } else if (!data.imagen_url && !currentProduct && data.action !== 'offer') {
+        el('robotWrapper').classList.remove('presenting');
     }
+    resetInactivityTimer();
     await playAudioFromUrl(data.audio_url, ticket, () => {
         if (ticket !== sequence) return;
         if (data.action === 'farewell') {
@@ -490,6 +496,7 @@ function setupGallery(images) {
 
 function mostrarResultado(data) {
     currentProduct = data;
+    el('robotWrapper').classList.remove('presenting');
     el('robotWrapper').classList.add('hidden');
     if (el('heroView')) el('heroView').classList.add('hidden');
     el('productView').classList.remove('hidden');
@@ -547,7 +554,9 @@ function volverInicio() {
     clearTimeout(inactivityTimer);
     inactivityTimer = null;
     currentProduct = null;
+    currentTeaserProduct = null;
     resetSessionContext();
+    el('robotWrapper').classList.remove('presenting');
     setMood('amable');
     const hint = el('interactionHint');
     if (hint) {
@@ -617,9 +626,6 @@ function startAutoListen() {
             } else {
                 stopAutoListen();
                 setPhase('idle');
-                if (currentProduct) {
-                    volverInicio();
-                }
             }
         }
     }, silenceMs);
@@ -642,6 +648,7 @@ function scheduleNextAutoListen(ms = 1500) {
 async function enviarPreguntaConversacion(message) {
     if (!message || !message.trim() || !currentProduct) return;
     const query = message.trim();
+    resetInactivityTimer();
     reminderGivenInTurn = false;
     stopAutoListen();
     updateConversationBubble('', query, '🟣 Pensando en tu consulta...');
@@ -714,12 +721,12 @@ async function pollInterest() {
             try {
                 let data;
                 try {
-                    data = await api.request('/api/audio/saludo', {signal});
-                } catch (err) {
                     data = await api.request('/api/audio/ofertas', {signal});
+                    if (!data || !data.text) throw new Error('empty offer');
+                } catch (err) {
+                    data = await api.request('/api/audio/saludo', {signal});
                 }
                 // Autonomous interest detection strictly keeps focus on robot face
-                data.action = 'greeting';
                 delete data.pollera;
                 await applySpeech(data, ticket);
             } catch (error) {
@@ -984,6 +991,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateContact();
     }).catch(() => showError('No se pudo cargar el contacto de la tienda.'));
+    const teaserBox = el('teaserContainer');
+    if (teaserBox) {
+        teaserBox.style.cursor = 'pointer';
+        teaserBox.addEventListener('click', () => {
+            if (currentTeaserProduct && !currentProduct) {
+                mostrarResultado(currentTeaserProduct);
+                const {ticket, signal} = beginRequest();
+                api.request('/api/audio/detalles/' + encodeURIComponent(currentTeaserProduct.codigo), {signal})
+                    .then(d => applySpeech(d, ticket))
+                    .catch(err => requestError(err, ticket));
+            }
+        });
+    }
+    el('productView')?.addEventListener('pointerdown', resetInactivityTimer);
     interestTimer = setInterval(pollInterest, 2000);
     api.request('/api/vision/status', {timeout: 5000}).then(result => {
         detectionEnabled = ['starting', 'running'].includes(result.state);

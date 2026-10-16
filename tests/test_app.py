@@ -862,3 +862,27 @@ class AutonomiaV1Tests(ApiTests):
         self.assertEqual(ctx4['celebration_reason'], 'boda')
         self.assertEqual(ctx4['presupuesto'], 'económico')
 
+    def test_occasion_followup_and_presentation(self):
+        # 1. Customer expresses occasion from hero screen: "lo quería para un cumpleaños"
+        r1 = self.client.post('/api/chat', json={'message': 'lo quería para un cumpleaños'})
+        self.assertEqual(r1.status_code, 200)
+        d1 = r1.json()
+        self.assertEqual(d1['action'], 'show_pollera')
+        self.assertIsNotNone(d1['pollera'])
+        self.assertIn('cumpleaños', d1['text'].lower())
+        self.assertEqual(d1['context']['celebration_reason'], 'cumpleaños')
+
+        # 2. While in product view, customer asks about another occasion: "y para Halloween?"
+        r2 = self.client.post('/api/conversacion', json={
+            'codigo': d1['pollera']['codigo'],
+            'message': '¿y para Halloween qué tienes?',
+            'context': d1['context']
+        })
+        self.assertEqual(r2.status_code, 200)
+        d2 = r2.json()
+        # Does NOT kick customer out with farewell, responds or presents pollera
+        self.assertIn(d2['action'], ('show_pollera', 'answer'))
+        self.assertIn('halloween', d2['text'].lower())
+        self.assertEqual(d2['context']['celebration_reason'], 'Halloween')
+
+

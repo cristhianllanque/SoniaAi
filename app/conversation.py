@@ -31,8 +31,8 @@ COLORS = {
     'crema': ['crema', 'beige'],
 }
 
-INTENTS = ('despedida', 'detalle_desconocido', 'reserva', 'descuento', 'color', 'otro_modelo', 'talla',
-           'incluye', 'precio', 'descripcion', 'saludo', 'gusto')
+INTENTS = ('despedida', 'gratitud', 'detalle_desconocido', 'reserva', 'descuento', 'color', 'otro_modelo', 'talla',
+           'incluye', 'precio', 'descripcion', 'saludo', 'gusto', 'ocasion')
 
 _PATTERNS = {
     'detalle_desconocido': r'salidas?|usos?|usad[ao]|veces|estrenad[ao]|nuev[ao]|estado|lavad[ao]|limpi\w*|'
@@ -49,7 +49,9 @@ _PATTERNS = {
     'descripcion': r'como es|describ\w*|detalle\w*|cuentame|bordad\w*',
     'saludo': r'hola|buenas|buenos dias|buenas tardes|buenas noches',
     'gusto': r'me gusta|bonit\w*|lind\w*|la quiero|me la llevo|hermos\w*|que bella',
-    'despedida': r'no\s*,?\s*gracias|gracias|chau|chao|adios|hasta luego|nos vemos|eso es todo|nada mas|no\s+mas|no\s+quiero',
+    'gratitud': r'(?:muchas\s+)?gracias(?!\s*(?:chau|chao|adios|hasta luego|nos vemos|eso es todo|nada mas|no\s+mas))',
+    'ocasion': r'cumplean\w*|cumple|halloween|navidad|boda|matrimoni\w*|graduaci\w*|promoci\w*|bautiz\w*|aniversari\w*|patronal|morenada|diablada|caporal|candelaria|carnaval|tinkus|fiesta|evento|agasajo|celebraci\w*',
+    'despedida': r'no\s*,?\s*gracias|muchas\s+gracias\s+(?:chau|chao|adios|hasta luego|eso es todo)|(?:muchas\s+gracias\s*,?\s*)?(?:chau|chao|adios|hasta luego|nos vemos|eso es todo|nada mas|no\s+mas|no\s+quiero)',
 }
 
 
@@ -265,6 +267,32 @@ def _answer(intent, text, product, others, context=None):
                              'y te confirman la disponibilidad.')
         return Reply(speech, 'answer', None, context)
 
+    if intent == 'gratitud':
+        speech.add('alegre', f'¡Con mucho gusto{voc_suffix}!')
+        speech.add('curiosa', 'Pregúntame lo que desees sobre esta pollera: talla, precio o lo que incluye. ¡Aquí estoy para ayudarte!')
+        return Reply(speech, 'answer', None, context)
+
+    if intent == 'ocasion':
+        reason = assistant.extract_celebration_reason(text) or 'esa ocasión'
+        if context:
+            context.celebration_reason = reason
+        available_others = [p for p in others if getattr(p, 'estado', 'DISPONIBLE') == 'DISPONIBLE']
+        match = assistant.select_pollera_for_occasion(reason, available_others, context=context)
+        if match and match.codigo != product.codigo:
+            if context:
+                context.current_code = match.codigo
+                if match.codigo not in context.viewed_codes:
+                    context.viewed_codes.append(match.codigo)
+            return Reply(
+                presentation(match, opener=f'¡Ah no, para esa ocasión de {reason} en la que tú me dijiste te podría dar esta pollera {match.nombre}!', context=context),
+                'show_pollera',
+                match,
+                context
+            )
+        speech.add('alegre', f'¡Para esa ocasión de {reason} esta misma pollera {product.nombre} te va a quedar sensacional{voc_suffix}!')
+        speech.add('curiosa', '¿Te gustaría saber qué accesorios incluye o coordinar por WhatsApp?')
+        return Reply(speech, 'answer', None, context)
+
     if intent == 'despedida':
         return Reply(personality.farewell(context), 'farewell', None, context)
 
@@ -314,27 +342,36 @@ async def respond(message, product, others, context=None):
         return Reply(personality.farewell(context), 'farewell', None, context)
 
     # 3. Extract celebration reason or budget perception from message
-    if 'navidad' in text:
-        context.celebration_reason = 'Navidad'
-    elif 'cumplean' in text:
-        context.celebration_reason = 'cumpleaños'
-    elif any(k in text for k in ('boda', 'matrimoni')):
-        context.celebration_reason = 'boda'
-    elif any(k in text for k in ('patronal', 'morenada', 'diablada', 'caporal', 'candelaria', 'carnaval')):
-        context.celebration_reason = 'fiesta patronal'
+    reason = assistant.extract_celebration_reason(text)
+    if reason:
+        context.celebration_reason = reason
 
     if any(k in text for k in ('barat', 'economi', 'ganga', 'regalo')):
         context.presupuesto = 'económico'
     elif any(k in text for k in ('caro', 'cara', 'costos')):
         context.presupuesto = 'ajustado'
 
-    # 4. Price perception remarks ("está barata" / "está cara")
+    # 4. Check if asking if it suits their event or asking for opinion on the pollera
+    if any(k in text for k in ('como me quedaria', 'como me queda', 'le da para', 'sirve para', 'que opinas', 'que tal para', 'le hace', 'combina')):
+        speech = Speech()
+        voc = personality.get_vocative(context)
+        voc_suffix = f', {voc}' if voc else ''
+        reas = getattr(context, 'celebration_reason', None)
+        if reas:
+            speech.add('entusiasmada', f'¡Para tu fiesta de {reas} te va a quedar sensacional{voc_suffix}!')
+        else:
+            speech.add('entusiasmada', f'¡Te va a quedar preciosa{voc_suffix}!')
+        speech.add('alegre', f'{product.nombre} tiene un bordado muy fino que luce muchísimo en cualquier evento, y viene completita en talla {product.talla}.')
+        speech.add('curiosa', '¿Te gustaría consultar si te la reservan por WhatsApp?')
+        return Reply(speech, 'answer', None, context)
+
+    # 5. Price perception remarks ("está barata" / "está cara")
     if any(k in text for k in ('barat', 'economi', 'ganga', 'caro', 'cara', 'costos')) and not _has(text, r'descuent\w*|rebaj\w*|ultimo precio|precio|cuanto|cuesta|soles'):
         comment_type = 'barata' if any(k in text for k in ('barat', 'economi', 'ganga')) else 'cara'
         speech = personality.price_comment_response(comment_type, product, context)
         return Reply(speech, 'answer', None, context)
 
-    # 5. Check for recognized product-specific intents
+    # 6. Check for recognized product-specific intents
     intent = detect_intent(text)
     if intent:
         context.last_intent = intent
@@ -342,12 +379,17 @@ async def respond(message, product, others, context=None):
         if reply:
             return reply
 
-    # 6. Celebration motive advice
-    if any(k in text for k in ('navidad', 'cumplean', 'boda', 'matrimoni', 'patronal', 'candelaria', 'carnaval')):
-        speech = personality.celebration_advice(context.celebration_reason, [product] + others, context)
+    # 7. Celebration motive advice or reaction
+    if reason and not any(k in text for k in ('precio', 'cuanto', 'talla', 'incluye', 'manta', 'sombrero', 'otro', 'cambia', 'color', 'alquila', 'reserva')):
+        speech = Speech()
+        voc = personality.get_vocative(context)
+        voc_suffix = f', {voc}' if voc else ''
+        speech.add('entusiasmada', f'¡Para {reason} te va a quedar sensacional{voc_suffix}!')
+        speech.add('alegre', f'Este modelo {product.nombre} tiene bordados y colores vivos que van a destacar mucho en tu fiesta.')
+        speech.add('curiosa', '¿Te gustaría probártela o separar la fecha por WhatsApp?')
         return Reply(speech, 'answer', None, context)
 
-    # 7. Casual chit-chat
+    # 8. Casual chit-chat
     if any(k in text for k in ('chiste', 'broma', 'gracios', 'linda', 'guapa', 'bonita', 'frio', 'calor', 'clima', 'como te llamas', 'quien eres')):
         speech = personality.casual_chit_chat(message, context)
         return Reply(speech, 'answer', None, context)
